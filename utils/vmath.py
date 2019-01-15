@@ -114,6 +114,12 @@ def add_p3(p3, dp3):
     return res
 
 def p3_T(p3):
+    """
+    Computes homogeneous transform,
+    from p3=(x,y,h) parametrization.
+    The resultant transform represents a conversion
+    from the p3 frame to the `world` frame.
+    """
     p3 = np.asarray(p3)
 
     if np.ndim(p3) > 1:
@@ -133,6 +139,10 @@ def p3_T(p3):
                 translate=(x,y,0),
                 angles=(0,0,h))
     pass
+
+def rx3(R, x):
+    rx = np.einsum('...ab,...b->...a', T[..., :3,:3], x)
+    return rx
 
 def tx3(T, x):
     rx = np.einsum('...ab,...b->...a', T[..., :3,:3], x)
@@ -179,3 +189,10 @@ def robust_mean(x, margin=10.0, weight=None):
         w = w / w.sum()
 
         return np.sum(x[msk] * w, axis=-1)
+
+
+def invert_index(i, n):
+    msk = np.ones(n, dtype=np.bool)
+    msk[i] = False
+    return np.where(msk)[0]
+

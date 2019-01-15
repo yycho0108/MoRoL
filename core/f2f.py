@@ -1,12 +1,185 @@
 from utils import vmath as M
 from utils import cv_wrap as W
 
-class F2F(object):
-    def __init__(self, track):
-        self.track = track
+class GPEstimator(object):
+    def __init__(self, pH, y0, ch):
+        self.pH_ = pH
+        self.y0_ = y0
+        self.ch_ = ch
 
-    def run_GP(self):
+    def __call__(self, pt0, pt1, pose0, pose1):
+        gp_msk = M.ands([
+            pt0[:,1] >= y_min,
+            pt1[:,1] >= y_min
+            ])
+
+        # 1) filter points by GP
+        gp_idx = np.where(gp_msk)[0]
+        if len(gp_idx) <= 3:
+            return pose1
+        # update pt_c and pt_p
+        pt_c = pt_c[gp_idx]
+        pt_p = pt_p[gp_idx]
+
+        # 2) filter points by homography inlier
+        H, msk_h = W.H(pt_c, pt_p,
+                method=self.pEM_['method'],
+                ransacReprojThreshold=self.pEM_['threshold']
+                )
+        idx_h = np.where(msk_h)[0]
+        print_ratio('Ground-plane Homography', len(idx_h), msk_h.size)
+        if len(idx_h) < 16: # TODO : magic number
+            # insufficient # of points -- abort
+            return null_result
+        # update pt_c and pt_p
+        pt_c = pt_c[idx_h]
+        pt_p = pt_p[idx_h]
+
+        # 3) compute r/t from Homography
+        res_h, Hr, Ht, Hn = cv2.decomposeHomographyMat(H, self.K_)
+        if not res_h:
+            return null_result
+        Hn = np.float32(Hn)
+        Ht = np.float32(Ht)
+        Ht /= np.linalg.norm(Ht, axis=1, keepdims=True) # NOTE: Ht is N,3,1
+        gp_z = (Hn[...,0].dot(self.T_c2b_[:3,:3].T))
+
+        # filter by estimated plane z-norm
+        # ~15-degree deviation from the anticipated z-vector (0,0,1)
+        # TODO : collect these heuristics params
+        z_val = ( np.abs(np.dot(gp_z, [0,0,1])) > np.cos(np.deg2rad(15)) )
+        z_idx = np.where(z_val)[0]
+        if len(z_idx) <= 0:
+            # abort ground-plane estimation.
+            return null_result
+        perm = zip(Hr,Ht)
+        perm = [perm[i] for i in z_idx]
+        n_in, R, t, msk_r, gpt3, sel = recover_pose_from_RT(perm, self.K_,
+                pt_c, pt_p, return_index=True, guess=guess, log=False)
+        gpt3 = gpt3.T # TODO : gpt3 not used
+
+        # least-squares refinement (?)
+        #(R, t), gpt3 = solve_TRI(pt_p[msk_r], pt_c[msk_r],
+        #        self.cvt_.K_, self.cvt_.Ki_,
+        #        self.cvt_.T_b2c_, self.cvt_.T_c2b_,
+        #        guess = (R,t) )
+
+        # convert w.r.t base_link
+        gpt3_base = gpt3.dot(self.cvt_.T_c2b_[:3,:3].T)
+        h_gp = robust_mean(-gpt3_base[:,2])
+        scale_gp = (camera_height / h_gp)
+        #print 'gp std', (gpt3_base[:,2] * scale_gp).std()
+        print 'gp-ransac scale', scale_gp
+        if np.isfinite(scale_gp) and scale_gp > 0:
+            # project just in case scale < 0...
+            scale = scale_gp
+
+        # this is functionally the only time it's considered "success".
+        return H, scale, (R, t), (gpt3, gp_idx[idx_h][msk_r])
+
+
+
+class EMEstimator(object):
+    def __init__(self, cvt):
         pass
+    def __call__(self, pt0, pt1, pose0, pose1):
+        pass
+
+class F2F(object):
+    def __init__(self, use_gp=True):
+        self.gp_ = GPEstimator()
+        self.em_ = EMEstimator()
+
+        self.use_gp_ = use_gp
+
+    def pose(self, pt0, pt1, pose0, pose1):
+
+    def run_GP(self, pt0, pt1, pose0, pose1):
+        """
+        Scale estimation based on locating the ground plane.
+        if scale:=None, scale based on best z-plane will be returned.
+        """
+        null_result = pose1
+        if not self.use_gp_:
+            return null_result
+
+        camera_height = self.T_c2b_[2, 3]
+
+        y_min = self.y_GP
+
+        gp_msk = np.logical_and.reduce([
+            pt0[:,1] >= y_min,
+            pt1[:,1] >= y_min])
+
+        gp_idx = np.where(gp_msk)[0]
+
+        if len(gp_idx) <= 3: # TODO : magic
+            # too few points, abort gp estimate
+            return null_result
+
+        # update pt_c and pt_p
+        pt_c = pt_c[gp_idx]
+        pt_p = pt_p[gp_idx]
+
+        # ground plane is a plane, so homography can (and should) be applied here
+        H, msk_h = cv2.findHomography(pt_c, pt_p,
+                method=self.pEM_['method'],
+                ransacReprojThreshold=self.pEM_['threshold']
+                )
+        idx_h = np.where(msk_h)[0]
+        print_ratio('Ground-plane Homography', len(idx_h), msk_h.size)
+
+        if len(idx_h) < 16: # TODO : magic number
+            # insufficient # of points -- abort
+            return null_result
+
+        # update pt_c and pt_p
+        pt_c = pt_c[idx_h]
+        pt_p = pt_p[idx_h]
+
+        # TODO : lots of information is discarded here,
+        # Such as R/T from homography and the reconstructed 3D Points.
+        # Only Scale is propagated.
+
+        res_h, Hr, Ht, Hn = cv2.decomposeHomographyMat(H, self.K_)
+        Hn = np.float32(Hn)
+        Ht = np.float32(Ht)
+        Ht /= np.linalg.norm(Ht, axis=1, keepdims=True) # NOTE: Ht is N,3,1
+        gp_z = (Hn[...,0].dot(self.T_c2b_[:3,:3].T))
+
+        # filter by estimated plane z-norm
+        # ~15-degree deviation from the anticipated z-vector (0,0,1)
+        # TODO : collect these heuristics params
+        z_val = ( np.abs(np.dot(gp_z, [0,0,1])) > np.cos(np.deg2rad(15)) )
+        z_idx = np.where(z_val)[0]
+        if len(z_idx) <= 0:
+            # abort ground-plane estimation.
+            return null_result
+        # NOTE: honestly don't know why I need to pre-filter by z-norm at all
+        perm = zip(Hr,Ht)
+        perm = [perm[i] for i in z_idx]
+        n_in, R, t, msk_r, gpt3, sel = recover_pose_from_RT(perm, self.K_,
+                pt_c, pt_p, return_index=True, guess=guess, log=False)
+        gpt3 = gpt3.T # TODO : gpt3 not used
+
+        # least-squares refinement (?)
+        #(R, t), gpt3 = solve_TRI(pt_p[msk_r], pt_c[msk_r],
+        #        self.cvt_.K_, self.cvt_.Ki_,
+        #        self.cvt_.T_b2c_, self.cvt_.T_c2b_,
+        #        guess = (R,t) )
+
+        # convert w.r.t base_link
+        gpt3_base = gpt3.dot(self.cvt_.T_c2b_[:3,:3].T)
+        h_gp = robust_mean(-gpt3_base[:,2])
+        scale_gp = (camera_height / h_gp)
+        #print 'gp std', (gpt3_base[:,2] * scale_gp).std()
+        print 'gp-ransac scale', scale_gp
+        if np.isfinite(scale_gp) and scale_gp > 0:
+            # project just in case scale < 0...
+            scale = scale_gp
+
+        # this is functionally the only time it's considered "success".
+        return H, scale, (R, t), (gpt3, gp_idx[idx_h][msk_r])
 
     def run_EM(self):
         null_result = (
@@ -51,64 +224,19 @@ class F2F(object):
             # insufficient # of points -- abort
             return null_result
 
-        if self.flag_ & ClassicalVO.VO_USE_HOMO:
-            # opt 2 : homography
-            H, msk_h = cv2.findHomography(pt2_u_c, pt2_u_p,
-                    method=self.pEM_['method'],
-                    ransacReprojThreshold=self.pEM_['threshold']
-                    )
-            msk_h = msk_h[:,0].astype(np.bool)
-            idx_h = np.where(msk_h)[0]
-            print_ratio('h_in', len(idx_h), msk_h.size)
-
-            # compare errors
-            sH, msk_sh = score_H(pt2_u_c, pt2_u_p, H, self.cvt_)
-            sF, msk_sf = score_F(pt2_u_c, pt2_u_p, F, self.cvt_)
-
-            r_H = (sH / (sH + sF))
-            print_ratio('RH', sH, sH+sF)
-
-        use_h = False
-        if self.flag_ & ClassicalVO.VO_USE_HOMO:
-            # TODO : "magic" determinant number based on ORB-SLAM Paper
-            use_h = (r_H > 0.45)
-
-        # TODO : option : filter based on input guess R,t
-        # maybe a good idea.
-
-        idx_p = None
-        if use_h:
-            # use Homography Matrix for pose
-            #idx_h = idx_h[msk_sh]
-            res_h, Hr, Ht, Hn = cv2.decomposeHomographyMat(H, self.K_)
-            print Hr[0], Ht[0], np.linalg.norm(Hr[0]), np.linalg.norm(Ht[0])
-            Ht = np.float32(Ht)
-
-            # NOTE: still don't know why Ht is not normalized.
-            Ht /= np.linalg.norm(Ht, axis=(1,2), keepdims=True)
-
-            perm = zip(Hr,Ht)
-            n_in, R, t, msk_r, pt3 = recover_pose_from_RT(perm, self.K_,
-                    pt2_u_c[idx_h], pt2_u_p[idx_h], guess=guess,
-                    log=False)
-            print_ratio('homography', len(idx_h), msk_h.size)
-
-            idx_p = idx_h
-        else:
-            # use Essential Matrix for pose
-            # TODO : specify z_min/z_max?
-            n_in, R, t, msk_r, pt3 = recover_pose(E, self.K_,
-                    pt2_u_c[idx_e], pt2_u_p[idx_e], guess=guess,
-                    log=False
-                    )
-            # least-squares refinement
-            #(R, t), pt3 = solve_TRI(pt2_u_p[idx_e[msk_r]], pt2_u_c[idx_e[msk_r]],
-            #        self.cvt_.K_, self.cvt_.Ki_,
-            #        self.cvt_.T_b2c_, self.cvt_.T_c2b_,
-            #        guess = (R,t) )
-            #pt3 = pt3.T
-            print_ratio('essentialmat', len(idx_e), msk_e.size)
-            idx_p = idx_e
+        # TODO : specify z_min/z_max?
+        n_in, R, t, msk_r, pt3 = recover_pose(E, self.K_,
+                pt2_u_c[idx_e], pt2_u_p[idx_e], guess=guess,
+                log=False
+                )
+        # least-squares refinement
+        #(R, t), pt3 = solve_TRI(pt2_u_p[idx_e[msk_r]], pt2_u_c[idx_e[msk_r]],
+        #        self.cvt_.K_, self.cvt_.Ki_,
+        #        self.cvt_.T_b2c_, self.cvt_.T_c2b_,
+        #        guess = (R,t) )
+        #pt3 = pt3.T
+        print_ratio('essentialmat', len(idx_e), msk_e.size)
+        idx_p = idx_e
 
         # idx_r = which points were used for pose reconstruction
         pt3 = pt3.T
@@ -118,7 +246,6 @@ class F2F(object):
         idx_in = idx_p[idx_r] # overall, which indices were used?
 
         return idx_in, pt3, (R, t)
-
 
     def __call__(self,
             img0, img1,

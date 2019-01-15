@@ -5,6 +5,19 @@ import viz as V
 import time
 
 class Matcher(object):
+    PRESET_HARD=dict(
+            lowe=0.75,
+            maxd=32.0,
+            cross=True,
+            fold=True
+            )
+    PRESET_SOFT=dict(
+            lowe=1.0,
+            maxd=128.0,
+            cross=False,
+            fold=True
+            )
+
     def __init__(self, des):
         # define un-exported enums from OpenCV
         FLANN_INDEX_KDTREE = 0
@@ -39,6 +52,7 @@ class Matcher(object):
             fn = lambda a,b : flann.knnMatch(np.float32(a), np.float32(b), k=2)
 
     def match(self, a, b):
+        """ search k matches in b for a """
         return self.flann_.knnMatch(
                 self.des_t_(a), self.des_t_(b), k=2)
 
@@ -82,7 +96,6 @@ class Matcher(object):
                 i2_ba, i1_ba = self(des2[i2_ab], des1[i1_ab],
                         lowe, maxd, cross=False)
                 i1, i2 = i1_ab[i1_ba], i2_ab[i2_ba]
-                print len(i1), len(i2)
             else:
                 # opt2 : apply the same operation reversed ( slower, maybe more robust ?? )
                 i2_ba, i1_ba = self(des2, des1,
@@ -91,7 +104,6 @@ class Matcher(object):
                 m2 = np.stack([i1_ba, i2_ba], axis=-1)
                 m  = M.intersect2d(m1, m2)
                 i1, i2 = m.T
-                print len(i1), len(i2)
 
         else:
             # check unidirectional (des1->des2)

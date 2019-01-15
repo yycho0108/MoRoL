@@ -2,7 +2,6 @@ import time
 import cv2
 import numpy as np
 from collections import defaultdict
-from utils.cascade_filter import CascadeFilter
 
 class Tracker(object):
     def __init__(self, pLK=None):
@@ -12,23 +11,6 @@ class Tracker(object):
         self.lk_ = cv2.SparsePyrLKOpticalFlow_create(
                 **pLK)
         self.tmp_ = defaultdict(lambda:None)
-
-        # construct inlier filter
-        self.filter_ = CascadeFilter([
-            # error check
-            [np.less, ('e','t') ],
-            # bounds check
-            [np.greater_equal, ('x',0)],
-            [np.greater_equal, ('y',0)],
-            [np.less, ('x','w')],
-            [np.less, ('y','h')],
-            # status check
-            [CascadeFilter.identity, ('st_fw',)],
-            [CascadeFilter.identity, ('st_bw',)],
-            ],
-            # default arguments
-            d = {0 : 0}
-            )
 
     def pLK0(self):
         """
@@ -46,6 +28,7 @@ class Tracker(object):
             img1, img2,
             pt1, pt2=None,
             thresh=2.0,
+            return_msk=False
             ):
         """
         Arguments:
@@ -62,6 +45,9 @@ class Tracker(object):
         if pt1.size <= 0:
             # soft fail
             pt2 = np.empty([0,2], dtype=np.float32)
+            if return_msk:
+                msk = np.empty([0], dtype=np.bool)
+                return pt2, msk
             idx = np.empty([0], dtype=np.int32)
             return pt2, idx
 
@@ -86,7 +72,7 @@ class Tracker(object):
 
             # handle image # 2 + pre-allocated data cache
             if self.tmp_['img2g'] is not None:
-                cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY, self.tmp_['img2g'])
+                cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY, self.tmp_['img2g'])
                 img2_gray = self.tmp_['img2g']
             else:
                 img2_gray = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
@@ -118,47 +104,24 @@ class Tracker(object):
         err = np.linalg.norm(pt1 - pt1_r, axis=-1)
 
         # apply mask
-        idx = np.arange(len(pt1))
+        msk = np.logical_and.reduce([
+            # error check
+            err < thresh,
+            # bounds check
+            0 <= pt2[:,0],
+            0 <= pt2[:,1],
+            pt2[:,0] < w,
+            pt2[:,1] < h,
+            # status check
+            st_fw,
+            st_bw,
+            ])
 
-        t0 = time.time()
-        for _ in range(100):
-            idx = self.filter_(idx, {
-                'x' : pt2[:,0],
-                'y' : pt2[:,1],
-                'e' : err,
-                'w' : w,
-                'h' : h,
-                't' : thresh,
-                'st_fw' : st_fw,
-                'st_bw' : st_bw,
-                })
-        t1 = time.time()
-        for _ in range(100):
-            idx2 = np.where(np.logical_and.reduce([
-                err < thresh,
-                0 <= pt2[:,0],
-                0 <= pt2[:,1],
-                pt2[:,0] < w,
-                pt2[:,1] < h,
-                st_fw,
-                st_bw,
-                ]))[0]
-        t2 = time.time()
-        for _ in range(100):
-            idx3 = np.where(np.all([
-                err < thresh,
-                0 <= pt2[:,0],
-                0 <= pt2[:,1],
-                pt2[:,0] < w,
-                pt2[:,1] < h,
-                st_fw,
-                st_bw,
-                ], axis=0))[0]
-        t3 = time.time()
-        print 'casc', t1 - t0
-        print 'flat', t2 - t1
-        print 'all',  t3 - t2
-        return pt2, idx
+        if return_msk:
+            return pt2, msk
+        else:
+            idx = np.where(msk)[0]
+            return pt2, idx
 
 def main():
     from matplotlib import pyplot as plt

@@ -229,8 +229,11 @@ class VMap(object):
             hard=False):
 
         if src_new is not None:
-            # This will happen after BA
+            # This will usually happen after BA
             self['src'][idx] = src_new
+
+        if var_new is 'auto':
+            var_new = 0.1 * dpt_new
 
         if hard:
             # total overwrite, {idp,var}

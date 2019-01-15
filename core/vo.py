@@ -1,5 +1,6 @@
 from utils.conversions import Conversions
 from core.track import Tracker
+from core.match import Matcher
 from core.vgraph import VGraph
 from core.vmap import VMap
 
@@ -66,6 +67,7 @@ class VO(object):
         self.map_ = VMap(self.cvt_, des)
 
         # processing handles
+        self.match_ = Matcher(des)
         self.track_ = Tracker(self.pLK_)
         self.ba_ = BASolver(
                 self.cvt_.K_, self.cvt_.Ki_,
@@ -89,6 +91,72 @@ class VO(object):
         # 2. initialize scale
         self.scale0_ = scale0
         self.use_s0_ = True
+
+    def track(self, pose,
+            img0, img1,
+            pt0, des0):
+        """
+        Note:
+            Implements persistent visual tracking with landmarks.
+            4 outcomes from track:
+                [new, recovery, (suppress), old]
+        Returns:
+            (ptn0, ptn1), (pto0, pto1, o_iol), (ptr0, ptr1, o_irl)
+        """
+        q_idx = self.map_.query( pose ) # < note : high tolerance
+        trk = self.map_['trk']
+        desl = self.map_['des'][q_idx]
+        i_trk = np.where(trk)[0]
+
+        i_m_s0, i_m_sl = self.match_(des0, desl, **Matcher.PRESET_SOFT)
+        i_m_h0, i_m_hl = self.match_(des0, desl, **Matcher.PRESET_HARD)
+
+        # new : "fail" soft match
+        # propagates pt0 from current frame
+        ptn0 = pt0[M.invert_index(i_m_s0, len(des0))]
+        ptn1, m_n = self.track_(img0, img1, ptn0)
+        ptn0 = ptn0[m_n]
+        ptn1 = ptn1[m_n]
+        # TODO : potentially apply more filters here
+
+        # old : tracked
+        # propagates pt0 from track
+        pto0 = ptl0[trk]
+        pto1, m_o = self.track_(img0, img1, pto0)
+        pto0 = pto0[m_o]
+        pto1 = pto1[m_o]
+
+        o_iol = np.where( trk & m_o ) [0]
+
+        # recovery : "pass" hard match + untracked
+        # propagates pt0 from current frame
+        # i_r = [i for (i, ir) in zip(i_m_h0, i_m_hl) if not trk[q_idx][ir] ]
+        msk_r = ~trk[q_idx][i_m_hl]
+        i_r = i_m_h0[msk_r]
+        ptr0 = pt0[i_r]
+        ptr1, m_r = self.track_(img0, img1, ptr0)
+        ptr0 = ptr0[m_r]
+        ptr1 = ptr1[m_r]
+
+        o_irl = np.setdiff1d(q_idx[i_m_hl], i_trk)[m_r]
+
+        # suppress : pass soft match + tracked
+        # (no_op)
+
+        # update tracking flags
+        self.map_['trk'] &= m_o
+        self.map_['trk'][o_irl] = True
+
+        # update tracking points
+        self.map_['kpt'][o_iol] = pto1
+        self.map_['kpt'][o_irl] = ptr1
+
+        # update observations graph - maybe.
+        self.graph_.add_obs( o_iol, pto1 ) # old
+        self.graph_.add_obs( o_irl, ptr0, self.graph_.index-1) # recovery-prv
+        self.graph_.add_obs( o_irl, ptr1 ) # recovery-cur
+
+        return (ptn0, ptn1), (pto0, pto1, o_iol), (ptr0, ptr1, o_irl)
 
     def run_PNP(self, pt3, pt2, pose,
             ax=None, msg=''):
@@ -119,58 +187,31 @@ class VO(object):
         img1, _, _, _, _ = self.graph_.get_data(-1) # current
         # NOTE : kpt1,des1,pt21,rsp1 ... are propagated from previous frame,
         # And are not used until the next frame arrives.
+       
+        # full tracking
+        res = self.track(pose1, img0, img1, pt20, des0)
+        (ptn0, ptn1), (pto0, pto1, o_iol), (ptr0, ptr1, o_irl) = res
 
-        # track points for PnP + LMK clearing
-        idx_l, pt2_l0 = self.map_.get_track()
-        li1 = len(idx_l) # number of currently tracking landmarks
-        pt2_l1, ti = self.track_(img0, img1, pt2_l0)
+        # refine KF pose with PnP
+        msg, pose1 = self.run_PNP(
+                self.map_['pos'][o_iol], pto1,
+                pose1, ax, msg=msg)
 
-        # update landmark tracking information
-        o_nmsk = np.ones(li1, dtype=np.bool)
-        o_nmsk[ti] = False
-        self.map_['pt2'][idx_l[ti]] = pt2_l1
-        self.map_.untrack(idx_l[o_nmsk])
+        # compute refined pose information from full point correspondences
+        pta0 = np.concatenate([ptn0, pto0, ptr0], axis=0)
+        pta1 = np.concatenate([ptn1, pto1, ptr1], axis=0)
+        i_n = np.s_[:len(ptn0)]
+        i_o = np.s_[len(ptn0):-len(ptr0)]
+        i_r = np.s_[-len(ptr0):]
 
-        # apply successful tracking indices
-        pt2_l0 = pt2_l0[ti]
-        pt2_l1 = pt2_l1[ti]
-        idx_l = idx_l[ti]
-        rsp_l  = self.map_['rsp'][idx_l]
-        pt3_l = self.map_['pos'][idx_l]
-
-        # add observation edge to graph
-        self.graph_.add_obs(idx_l, pt2_l1)
-
-        # refine kf pose with PnP
-        msg, pose1 = self.run_PNP(pt3_l, pt2_l1,
-                pose1, ax=ax, msg=msg)
-
-        # track additional points
-        pt21, idx_t = self.track_(img0, img1, pt20)
-
-        # apply successful tracking indices
-        kpt0 = kpt0[idx_t]
-        des0 = des0[idx_t]
-        rsp0 = rsp0[idx_t]
-        pt20 = pt20[idx_t]
-        pt21 = pt21[idx_t]
-
-        # compute refined pose information from point correspondences
-        pt20_a = np.concatenate([pt20, pt2_l0], axis=0)
-        pt21_a = np.concatenate([pt21, pt2_l1], axis=0)
-        pose1, idx_p = self.f2f_.pose(
-                pt20_a, pt21_a,
+        pose1 = self.f2f_.pose(
+                pta0, pta1,
                 pose0, pose1)
 
-        # initialize point cloud from current pose estimates
-        KP1 = cvt.K_.dot(cvt.Tb2Tc(M.p3_T(pose1))[:3])
-        KP0 = cvt.K_.dot(cvt.Tb2Tc(M.p3_T(pose0))[:3])
-        pt3 = W.triangulate_points(
-                KP1, KP0,
-                pt21, pt20)
 
         # additional refinements from older frames with greater displacement
         # TODO : currently disabled while waiting for architectural decisions.
+        """
         for di in []:
             # acquire data from past frames
             data = self.graph_.get_data(di)
@@ -198,18 +239,38 @@ class VO(object):
                             pt21[idx_i], pt2i[idx_i]
                             ),
                         w=0.25) # TODO : tune alpha? dynamic?
+        """
 
         # finalize pose
         pose1 = self.graph_.update(1, [pose1])
 
-        # filter new points
-        idx_f = pts_nmx(pt21, pt2_l1,
-                rsp0, rsp_l,
-                k=4, radius=16.0, thresh=1.0
+        # finalize point cloud
+        Tb0 = M.p3_T(pose0) # b0 -> o
+        Tb1 = M.p3_T(pose1)
+        Tb1i = M.Ti(Tb1) # o -> b1
+        Tbb = np.dot(Tb1i, Tb0)
+        Tcc = cvt.Tb2Tc(Tbb)
+        KP1 = cvt.K_.dot(np.eye(3,4))
+        KP0 = cvt.K_.dot(Tcc[:3])
+        pt31 = W.triangulate_points(
+                KP1, KP0,
+                pta1, pta0)
+
+        # update map
+        self.map_.append(index, pt31[i_n], pose1,
+                pta0[i_n], des0[i_n], col[i_n])
+        pt3 = self.cvt_.cam_to_map(pt31, pose1)
+        dpt = self.cvt_.map_to_cam(pt3, self.map_['src'][o_iol])[..., 2]
+
+        self.map_.update(o_iol,
+                dpt_new=dpt[i_o],
+                var_new='auto',
+                hard=False
+                )
+        self.map_.update(o_irl,
+                dpt_new=dpt[i_r]
+                var_new='auto',
+                hard=False
                 )
 
-        # apply filter
-        pt21 = pt21[idx_f]
 
-        # add final landmarks
-        self.landmarks_.append( new_lm_args )
