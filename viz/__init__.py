@@ -1,3 +1,3 @@
 from gui import *
 from draw import *
-from print import *
+from log import *

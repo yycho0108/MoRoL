@@ -1,5 +1,7 @@
-from utils import vmath as M
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
+
+from utils import vmath as M
 from utils import cv_wrap as W
 
 def resolve_Rt(R0, R1, t0, t1, alpha=0.5, guess=None):
@@ -159,3 +161,37 @@ def recover_pose(E, K,
             guess=guess,
             log=log
             )
+
+def pts_nmx(
+        pt, pt_ref,
+        val, val_ref,
+        k=16,
+        radius=1.0, # << NOTE : supply valid radius here when dealing with 2D Data
+        thresh=1.0
+        ):
+    # NOTE : somewhat confusing;
+    # here suffix c=camera, l=landmark.
+    # TODO : is it necessary / proper to take octaves into account?
+    if len(pt_ref) < k:
+        # Not enough references to apply non-max with.
+        return np.arange(len(pt))
+
+    # compute nearest neighbors
+    neigh = NearestNeighbors(n_neighbors=k, radius=radius)
+    neigh.fit(pt_ref)
+
+    # NOTE : 
+    # radius_neighbors would be nice, but indexing is difficult to use
+    # res = neigh.radius_neighbors(pt_new, return_distance=False)
+    d, i = neigh.kneighbors(pt, return_distance=True)
+
+    # too far from other landmarks to apply non-max
+    msk_d = (d.min(axis=1) >= radius)
+    # passed non-max
+    msk_v = np.all(val_ref[i] < thresh*val[:,None], axis=1) # 
+
+    # format + return results
+    msk = (msk_d | msk_v)
+    idx = np.where(msk)[0]
+    print_ratio('non-max', len(idx), msk.size)
+    return idx

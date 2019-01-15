@@ -30,7 +30,7 @@ class VMap(object):
         self.lmk_t_ = np.dtype([
             # Positional data
             ('fid', np.int32),      # source frame index
-            ('src', np.float32, 3), # source pose (volatile)
+            ('src', np.float32, 3), # source pose (may change)
             ('idp', np.float32),    # inverse depth
             ('vec', np.float32, 3),    # view-vector
 
@@ -40,7 +40,7 @@ class VMap(object):
 
             # Feature Information
             ('des', np.float32, n_des),
-            ('oct', np.float32),
+            ('oct', np.int32),
             ('rsp', np.float32),
 
             # Tracking Information
@@ -50,10 +50,10 @@ class VMap(object):
             # Query Cache / Logging
             ('ang', np.float32),
             ('col', np.uint8, 3),
-            ('mnd', np.float32),
-            ('mxd', np.float32),
 
             # derived data (cache)
+            ('mnd', np.float32),
+            ('mxd', np.float32),
             ('dpt', np.float32), # depth, (1.0 / idp)
             ('pos', np.float32, 3) # position, computed from
             ])
@@ -122,9 +122,6 @@ class VMap(object):
         kpt = [e.pt for e in kpt] # NOTE : shadows previous kpt
         trk = True
         ang = src[2] # will be broadcasted
-
-        #print 'pos', pos
-        #print 'ray', vec * (1.0 / idp[:,None])
 
         pos = self.compute_pt3(src, ray=pos) # NOTE : shadows previous pos
         lsf = np.float32([self.s_pyr_[e] for e in oct])
@@ -200,41 +197,66 @@ class VMap(object):
         cnt = self['cnt'][idx]
         return (pt2, pos, des, var, cnt, idx)
 
+    def _update_cache(self, idx=None):
+        """
+        Assuming self.idp / self.src had been modified,
+        updates the following derived parameters:
+            [dpt, pos, mxd, mnd]
+        """
+        if idx is None:
+            idx = np.s_[:self.size]
+
+        idp = self['idp'][idx]
+        dpt = (1.0 / idp)
+
+        # update derived parameters cache
+        self['dpt'][idx] = dpt
+        self['pos'][idx] = self.compute_pt3(
+                src=self['src'][idx],
+                vec=self['vec'][idx],
+                idp=self['idp'][idx])
+
+        lsf = np.float32([self.s_pyr_[e] for e in self['oct'][idx]])
+        mxd = dpt * lsf
+        mnd = mxd / self.s_pyr_[-1]
+        self['mxd'][idx] = mxd
+        self['mnd'][idx] = mnd
+
     def update(self, idx,
-            dpt_new, var_new=None,
+            src_new=None,
+            dpt_new=None,
+            var_new=None,
             hard=False):
+
+        if src_new is not None:
+            # This will happen after BA
+            self['src'][idx] = src_new
+
         if hard:
-            # total overwrite
-            self['idp'][idx] = (1.0 / dpt)
+            # total overwrite, {idp,var}
+            self['idp'][idx] = (1.0 / dpt_new)
+            if var_new is not None:
+                self['var'][idx] = var_new
         else:
             # incorporate previous information
+            # requires var_new != None
+
             idp_old = self['idp'][idx]
             var_old = self['var'][idx]
-            idp_new = (1.0 / dpt_new) # << TODO : eps needed?
-            print 'idp: old-new', idp_old[0], idp_new[0]
-            print 'var: old-new', var_old[0], var_new[0]
+
+            idp_new = (1.0 / dpt_new)
             vsum = var_old + var_new
 
             # apply standard gaussian product
             idp = (idp_old * var_new + idp_new * var_old) / (vsum)
-            print 'idp: res', idp[0]
             var = (var_old * var_new) / (vsum)
 
             self['idp'][idx] = idp
             self['var'][idx] = var
-            self['cnt'][idx] += 1
 
-            # update derived parameters cache
-            print 'pre?', self['pos'][idx[0]]
-            pos_new = self.compute_pt3(
-                    src=self['src'][idx],
-                    vec=self['vec'][idx],
-                    idp=self['idp'][idx])
+        self['cnt'][idx] += 1
 
-            self['pos'][idx] = pos_new
-            print 'post?', pos_new[0]
-            print 'post?', self['pos'][idx[0]]
-
+        self._update_cache()
 
     def prune(self, k=8, radius=0.05, keep_last=512):
         """
@@ -287,8 +309,7 @@ class VMap(object):
         sz = msk.sum() # new size
         print('Landmarks Pruning : {}->{}'.format(msk.size, sz))
 
-        for k in self.data_.dtype.names:
-            self.data_[k][:sz] = self.data_[k][:self.size_][msk]
+        self.data_[:sz] = self.data_[:self.size_][msk]
 
         self.size_ = sz
         self.pidx_ = self.size_
@@ -361,9 +382,7 @@ def main():
             )
     # test append
     src = np.random.uniform(size=3)
-    #dst = np.random.uniform(size=3)
-    dst = src
-
+    dst = np.random.uniform(size=3)
 
     # generate random image + forge data
     img = np.random.uniform(low=0, high=255,
@@ -401,12 +420,14 @@ def main():
     idx = q[-1]
     dpt = cvt.map_to_cam(pt3_c0[idx], dst)[:, 2]
     var = 0.01 * dpt
-    vmap.update(idx, np.random.normal(dpt, scale=0.0), var)
+    vmap.update(idx,
+            dpt_new = np.random.normal(dpt, scale=0.0),
+            var_new = var)
     vmap.draw(ax, 'bx', label='post')
 
     vmap.prune(keep_last=0)
     vmap.untrack( np.random.randint(0, 32, 16) )
-    print vmap.get_track()
+    #print vmap.get_track()
 
     vmap.prune(keep_last=0)
     vmap.draw(ax, 'c.', label='post-prune')

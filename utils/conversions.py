@@ -182,7 +182,7 @@ class Conversions(object):
                     lowe, maxd, cross=False)
             m1 = np.stack([i1_ab, i2_ab], axis=-1)
             m2 = np.stack([i1_ba, i2_ba], axis=-1)
-            m  = intersect2d(m1, m2)
+            m  = M.intersect2d(m1, m2)
             i1, i2 = m.T
             return i1, i2
         else:

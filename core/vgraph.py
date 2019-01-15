@@ -46,7 +46,7 @@ class VGraph(object):
             # but override data at index if requsted
             self.dat_[i] = dat
 
-    def set_data_from(self, img, i=None):
+    def process(self, img, i=None):
         # 1. process data
         img = self.cvt_.img_to_imgu(img) # undistort
         kpt = self.cvt_.img_to_kpt(img,
