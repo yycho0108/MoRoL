@@ -1,6 +1,8 @@
+import time
 import cv2
 import numpy as np
 from collections import defaultdict
+from utils.cascade_filter import CascadeFilter
 
 class Tracker(object):
     def __init__(self, pLK=None):
@@ -10,6 +12,23 @@ class Tracker(object):
         self.lk_ = cv2.SparsePyrLKOpticalFlow_create(
                 **pLK)
         self.tmp_ = defaultdict(lambda:None)
+
+        # construct inlier filter
+        self.filter_ = CascadeFilter([
+            # error check
+            [np.less, ('e','t') ],
+            # bounds check
+            [np.greater_equal, ('x',0)],
+            [np.greater_equal, ('y',0)],
+            [np.less, ('x','w')],
+            [np.less, ('y','h')],
+            # status check
+            [CascadeFilter.identity, ('st_fw',)],
+            [CascadeFilter.identity, ('st_bw',)],
+            ],
+            # default arguments
+            d = {0 : 0}
+            )
 
     def pLK0(self):
         """
@@ -84,7 +103,7 @@ class Tracker(object):
             pt2, st, _ = self.lk_.calc(
                     img1_gray, img2_gray, pt1, None
                     )
-        msk_st_fw = st[:,0].astype(np.bool)
+        st_fw = st[:,0].astype(np.bool)
 
         # backward flow
         # unset initial flow flags
@@ -92,7 +111,7 @@ class Tracker(object):
         pt1_r, st, _ = self.lk_.calc(
                 img2_gray, img1_gray, pt2, None
                 )
-        msk_st_bw = st[:,0].astype(np.bool)
+        st_bw = st[:,0].astype(np.bool)
 
         # override error with reprojection error
         # (default error doesn't make much sense anyways)
@@ -100,39 +119,67 @@ class Tracker(object):
 
         # apply mask
         idx = np.arange(len(pt1))
-        msk_in = np.logical_and.reduce([
-            0 <= pt2[:,0],
-            0 <= pt2[:,1],
-            pt2[:,0] < w,
-            pt2[:,1] < h
-            ])
 
-        # track reprojection error
-        msk_err = (err < thresh)
-        msk = np.logical_and.reduce([
-            msk_err,
-            msk_in,
-            msk_st_fw,
-            msk_st_bw,
-            ])
-        idx = idx[msk]
-
+        t0 = time.time()
+        for _ in range(100):
+            idx = self.filter_(idx, {
+                'x' : pt2[:,0],
+                'y' : pt2[:,1],
+                'e' : err,
+                'w' : w,
+                'h' : h,
+                't' : thresh,
+                'st_fw' : st_fw,
+                'st_bw' : st_bw,
+                })
+        t1 = time.time()
+        for _ in range(100):
+            idx2 = np.where(np.logical_and.reduce([
+                err < thresh,
+                0 <= pt2[:,0],
+                0 <= pt2[:,1],
+                pt2[:,0] < w,
+                pt2[:,1] < h,
+                st_fw,
+                st_bw,
+                ]))[0]
+        t2 = time.time()
+        for _ in range(100):
+            idx3 = np.where(np.all([
+                err < thresh,
+                0 <= pt2[:,0],
+                0 <= pt2[:,1],
+                pt2[:,0] < w,
+                pt2[:,1] < h,
+                st_fw,
+                st_bw,
+                ], axis=0))[0]
+        t3 = time.time()
+        print 'casc', t1 - t0
+        print 'flat', t2 - t1
+        print 'all',  t3 - t2
         return pt2, idx
 
 def main():
     from matplotlib import pyplot as plt
+    # params
+    w = 2*640
+    h = 2*480
+    n = 2*1024
+    di = 8
+    dj = 32
 
     track = Tracker()
 
-    img1 = np.random.randint(0, 255, size=(480,640,3), dtype=np.uint8)
+    img1 = np.random.randint(0, 255, size=(h,w,3), dtype=np.uint8)
     #img2 = np.random.randint(0, 255, size=(480,640,3), dtype=np.uint8)
-    img2 = np.roll(img1, 8, axis=0)
-    img2 = np.roll(img2, 8, axis=1)
+    img2 = np.roll(img1, di, axis=0)
+    img2 = np.roll(img2, dj, axis=1)
 
     #img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
     #img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
 
-    pt1  = np.random.uniform((0,0), (640,480), size=(100,2)).astype(np.float32)
+    pt1  = np.random.uniform((0,0), (w,h), size=(n,2)).astype(np.float32)
     pt2, idx = track(img1, img2, pt1)
     #pt2, idx = track(img1, img2, pt1, pt2)
 

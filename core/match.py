@@ -43,18 +43,23 @@ class Matcher(object):
                 self.des_t_(a), self.des_t_(b), k=2)
 
     def filter(self, match, lowe, maxd):
-        ## apply lowe + distance filter
+        """
+        Apply lowe + distance filter.
+        # TODO : set threshold for lowe's filter
+        # TODO : set reasonable maxd for GFTT, for instance.
+        """
         good = []
         for e in match:
             if not len(e) == 2:
                 continue
             (m, n) = e
-            # TODO : set threshold for lowe's filter
-            # TODO : set reasonable maxd for GFTT, for instance.
-            c_lowe = (m.distance <= lowe * n.distance)
-            c_maxd = (m.distance <= maxd)
-            if (c_lowe and c_maxd):
-                good.append(m)
+            if not (m.distance <= lowe * n.distance):
+                continue
+            if not (m.distance <= maxd):
+                continue
+
+            # passed all checks
+            good.append(m)
         return good
 
     def __call__(self, des1, des2,
