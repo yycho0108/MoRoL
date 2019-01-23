@@ -8,10 +8,11 @@ from tf import transformations as tx
 import cv2
 from scipy.optimize import least_squares
 
-def mdot(*x):
-    return np.linalg.multi_dot(x)
-    
 class KruppaSolver(object):
+    """
+    Hartley's formulation
+    https://ieeexplore.ieee.org/document/574792
+    """
     def __init__(self):
         self.cache_ = {}
         self.params_ = dict(
@@ -115,6 +116,59 @@ class KruppaSolver(object):
 
         #print 'es', e.shape
 
+class KruppaSolverMC(object):
+    """
+    http://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/FUSIELLO3/node4.html
+    ftp://mi.eng.cam.ac.uk/pub/reports/mendonca_self-calibration.pdf
+    """
+    def __init__(self):
+        self.params_ = dict(
+            ftol=1e-5,
+            xtol=1e-7,
+            loss='linear',
+            #x_scale='jac',
+            max_nfev=1024,
+            #method='lm',
+            method='trf',
+            verbose=2,
+            #tr_solver='lsmr',
+            tr_solver='exact',
+            f_scale=100.0
+            )
+        self.jac = jacobian(self.err_anp)#, np=anp)
+
+    def wrap_A(self, A, np=np):
+        #fx,fy,cx,cy
+        return A[(0,0,1,1),(0,2,1,2)]#.ravel()
+
+    def unwrap_A(self, A, np=np):
+        return np.array([
+            A[0],0,A[1],
+            0,A[2],A[3],
+            0,0,1]).reshape(3,3)
+
+    def err_anp(self, params, Fs):
+        e = self.err(params, Fs, np=anp)
+        return e
+
+    def err(self, params, Fs, np=np):
+        A = self.unwrap_A(params[:4], np=np)
+        Es = np.einsum('ba,...bc,cd->...ad', A, Fs, A)
+        s = np.linalg.svd(Es,full_matrices=False, compute_uv=False)
+        c = (s[..., 0] / s[...,1]) - 1.0
+        return c
+
+    def __call__(self, A, Fs):
+        res = least_squares(
+                self.err, self.wrap_A(A),
+                args=(Fs,),
+                jac=self.jac,
+                **self.params_)
+        A = self.unwrap_A(res.x)
+        print 'K (optimized)'
+        print A
+        return A
+
 def gen(max_n=100, min_n=16,
         w=640, h=480,
         K=None, Ki=None,
@@ -157,11 +211,13 @@ def gen(max_n=100, min_n=16,
 
 def main():
     #seed = np.random.randint( 65536 )
-    seed = 55507
+    #seed = 55507
+    seed = 34112
+
+
     print('seed', seed)
     np.random.seed( seed )
 
-    solver = KruppaSolver()
     K = np.float32([500,0,320,0,500,240,0,0,1]).reshape(3,3)
     K0 = K.copy()
 
@@ -177,7 +233,7 @@ def main():
     print K0
 
     Fs = []
-    for _ in range(16):
+    for _ in range(1024):
         p1, p2, x, P1, P2 = gen(min_n=64, K=K)
         F, _ = W.F(p1, p2,
                 method=cv2.FM_RANSAC,
@@ -196,7 +252,10 @@ def main():
 
         Fs.append(F)
     Fs = np.asarray(Fs, dtype=np.float64)
-    solver(K0, Fs)
+
+    # two-step refinement?
+    K0 = KruppaSolverMC()(K0, Fs)
+    K = KruppaSolver()(K0, Fs)
 
 if __name__ == "__main__":
     main()
