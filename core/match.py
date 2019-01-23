@@ -32,7 +32,7 @@ class Matcher(object):
         self.des_t_ = (np.uint8 if des.descriptorType() == cv2.CV_8U
                 else np.float32)
 
-        if isinstance(des, cv2.ORB):
+        if isinstance(des, cv2.ORB) or isinstance(des, cv2.AKAZE):
             # ~HAMMING
             index_params= dict(algorithm = FLANN_INDEX_LSH,
                        table_number = 6, # 12
@@ -48,7 +48,6 @@ class Matcher(object):
                     trees = 5)
             flann = cv2.FlannBasedMatcher(index_params,search_params)
             self.flann_ = flann
-            self.des_t_ = des_t
             fn = lambda a,b : flann.knnMatch(np.float32(a), np.float32(b), k=2)
 
     def match(self, a, b):
@@ -107,6 +106,9 @@ class Matcher(object):
 
         else:
             # check unidirectional (des1->des2)
+            if len(des1) < 2:
+                # insufficient # of descriptors
+                return np.int32([]), np.int32([])
             match = self.match(des1, des2)
             match = self.filter(match, lowe, maxd)
 

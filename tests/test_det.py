@@ -21,20 +21,11 @@ def xywh2xyxy(b):
 
 class TrackTest(object):
     def __init__(self):
-        orb = cv2.ORB_create(
-            nfeatures=1024,
-            scaleFactor=1.2,
-            nlevels=8,
-            # NOTE : scoretype here influences response-based filters.
-            #scoreType=cv2.ORB_FAST_SCORE,
-            scoreType=cv2.ORB_HARRIS_SCORE,
-            )
-        self.orb_ = orb
-        self.des_ = cv2.xfeatures2d.BoostDesc_create(
-                desc = cv2.xfeatures2d.Boost
-                )
+        self.det_ = cv2.AKAZE_create()
+        self.des_ = self.det_
+
         self.track_ = Tracker()
-        self.match_ = Matcher(des=orb)
+        self.match_ = Matcher(des=self.det_)
         self.kcf_   = cv2.TrackerKCF_create()
 
         cv2.namedWindow('win')
@@ -56,7 +47,7 @@ class TrackTest(object):
         self.map_ = {
                 'trk' : np.empty(0, dtype=np.bool),
                 'kpt' : np.empty((0,2), dtype=np.float32),
-                'des' : np.empty((0,32), dtype=np.uint8)
+                'des' : np.empty((0,self.des_.descriptorSize()), dtype=np.uint8)
                 }
         self.col_ = defaultdict(
                 lambda : np.random.randint(0, 255, size=(3,), dtype=int)
@@ -89,11 +80,7 @@ class TrackTest(object):
 
     def step(self):
         img = self.img_
-        #kpt, des = self.orb_.detectAndCompute(img, None)
-        kpt = self.orb_.detect(img, None)
-        kpt, des = self.des_.compute(img, kpt)
-        #kpt, des = self.orb_.detectAndCompute(img, None)
-
+        kpt, des = self.det_.detectAndCompute(img, None)
 
         #plt.clf()
         #plt.hist( [k.response for k in kpt] )
@@ -106,9 +93,7 @@ class TrackTest(object):
                 msk = np.zeros(img.shape[:2], dtype=np.uint8)
                 msk[r[1]:r[3], r[0]:r[2]] = 255
                 self.msk_ = msk
-                #kpt, des = self.orb_.detectAndCompute(img, msk)
-                kpt = self.orb_.detect(img, None)
-                kpt, des = self.des_.compute(img, kpt)
+                kpt, des = self.det_.detectAndCompute(img, msk)
                 self.prv_ = (img.copy(), kpt, des)
 
                 self.kcf_.init(img, xyxy2xywh(r) )

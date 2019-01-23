@@ -1,15 +1,20 @@
 import numpy as np
 from tf import transformations as tx
 
+def rint(x):
+    return np.round(x).astype(np.int32)
+
 def anorm(x):
     return (x + np.pi) % (2*np.pi) - np.pi
 
 def inv(x):
     return np.linalg.inv(x)
 
-def to_h(x):
+def to_h(x, z=False):
     x = np.asarray(x)
     o = np.ones_like(x[..., :1])
+    if z:
+        o *= 0
     return np.concatenate([x,o], axis=-1)
 
 def from_h(x):
@@ -19,7 +24,11 @@ def norm(x, *args, **kwargs):
     return np.linalg.norm(x, *args, axis=-1, **kwargs)
 
 def uvec(x):
-    return x / norm(x, keepdims=True)
+    n = norm(x, keepdims=True)
+    if n < np.finfo(np.float32).eps:
+        return x
+    else:
+        return x / norm(x, keepdims=True)
 
 def R2(x, T=None, c=None, s=None):
     if T is None:
@@ -190,9 +199,22 @@ def robust_mean(x, margin=10.0, weight=None):
 
         return np.sum(x[msk] * w, axis=-1)
 
-
 def invert_index(i, n):
     msk = np.ones(n, dtype=np.bool)
     msk[i] = False
     return np.where(msk)[0]
 
+def E2F(E, K=None, Ki=None):
+    if Ki is None:
+        Ki = inv(K)
+    F = np.linalg.multi_dot([
+        Ki.T, E, Ki])
+    # normalize
+    #F /= F[-1,-1]
+    return F
+
+def F2E(F, K=None, Ki=None):
+    if K is None:
+        K = inv(Ki)
+    return np.linalg.multi_dot([
+        K.T, F, K])

@@ -3,6 +3,8 @@ from sklearn.neighbors import NearestNeighbors
 
 from utils import vmath as M
 from utils import cv_wrap as W
+import cv2
+from viz.log import print_Rt
 
 def resolve_Rt(R0, R1, t0, t1, alpha=0.5, guess=None):
     # TODO : deal with R0/R1 disagreement?
@@ -68,7 +70,7 @@ def recover_pose_perm(perm, K,
         pt3_b = M.tx3(P2, pt3)
 
         # apply z-value (depth) filter
-        za, zb = pt3_a[2], pt3_b[2]
+        za, zb = pt3_a[:,2], pt3_b[:,2]
         msk_i = np.logical_and.reduce([
             z_min < za,
             za < z_max,
@@ -132,7 +134,7 @@ def recover_pose_perm(perm, K,
 
     R, t = perm[sel]
     msk = msks[sel]
-    pt3 = pt3s[sel][:,msk]
+    pt3 = pt3s[sel][msk]
     n_in = msk.sum()
 
     if return_index:

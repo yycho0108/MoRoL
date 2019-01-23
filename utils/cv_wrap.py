@@ -18,7 +18,7 @@ def F(*args, **kwargs):
     f, msk = cv2.findFundamentalMat(
             *args, **kwargs)
     msk = msk[:,0].astype(np.bool)
-    return e, msk
+    return f, msk
 
 def project_points(*args, **kwargs):
     pt2, jac = cv2.projectPoints(*args, **kwargs)
