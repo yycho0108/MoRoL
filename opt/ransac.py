@@ -17,7 +17,7 @@ class RANSACModel(object):
     def n_it(self, w, n0, eps=np.finfo(np.float32).eps):
         # protect against invalid input
         p  = np.clip(self.prob_, 0, 1)
-        ep = np.clip(w, 0, 1)
+        ep = np.clip(1.0-w, 0, 1)
 
         # prep numerator + denominator, k= log(1-p)/log(1-w**m)
         nmr = max(1.0 - p, eps)
@@ -58,7 +58,7 @@ class RANSACModel(object):
         while it < n:
             model, err, inl, w = self.step(n_data)
             n = self.n_it(w, n) # update num iterations
-            if w > best['w']:
+            if w >= best['w']:
                 best['w'] = w
                 best['model'] = model
                 best['err'] = err
