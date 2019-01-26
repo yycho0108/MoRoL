@@ -47,8 +47,11 @@ class KruppaSolver(object):
     def K2A(self, K):
         """ closed-form decomposition for {A | A.AT=K} """
         k1,k2,k3,k4,k5 = K[(0,0,0,1,1),(0,1,2,1,2)]
-        e00 = np.sqrt( k1 - k3**2 - (k2-k3*k5)**2 / (k4-k5**2) )
+        #e00 = np.sqrt( k1 - k3**2 - (k2-k3*k5)**2 / (k4-k5**2) )
+        e00 = np.sqrt((k1*k4 - k1*k5**2 - k2**2 + 2*k2*k3*k5 - k3**2*k4)/(k4 - k5**2))
         e01 = (k2 - k3*k5) / np.sqrt(k4-k5**2)
+        if e01 < 0:
+            e01 = -e01
         e02 = k3
         e11 = np.sqrt(k4-k5**2)
         e12 = k5
