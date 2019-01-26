@@ -2,6 +2,7 @@ from opt.dist import DistSolver
 from core.match import Matcher
 import cv2
 import numpy as np
+from matplotlib import pyplot as plt
 
 def main():
     w, h = 640, 480
@@ -16,6 +17,8 @@ def main():
 
     kpt0 = None
     des0 = None
+
+    ls = []
 
     while True:
         res, img = cam.read()
@@ -42,6 +45,7 @@ def main():
         if l is not None:
             print 'l', l[1]
             print '{}/{}'.format(l[2].sum(), len(pt_a))
+            ls.append( l[1] )
 
         img = cv2.drawKeypoints(img, kpt, img)
         cv2.imshow('win', img)
@@ -52,6 +56,14 @@ def main():
         k = cv2.waitKey( 1 )
         if k == 27:
             break
+
+        if len(ls) > 0:
+            ls_lo = np.percentile(ls, 20.0)
+            ls_hi = np.percentile(ls, 80.0)
+            ls_mid = np.array(ls)[np.logical_and(ls_lo <= ls, ls <= ls_hi)]
+            plt.clf()
+            plt.hist(ls_mid)
+            plt.pause(0.001)
 
 if __name__ == "__main__":
     main()

@@ -167,7 +167,7 @@ class KruppaSolverMC(object):
         #print A
         return A
 
-def gen(max_n=100, min_n=16,
+def _gen(max_n=100, min_n=16,
         w=640, h=480,
         K=None, Ki=None,
         ):
@@ -204,19 +204,27 @@ def gen(max_n=100, min_n=16,
     p1, p2, x = [e[msk] for e in [p1,p2,x]]
     if len(p1) < min_n:
         # retry
-        return gen(max_n,min_n,w,h,K,Ki)
+        #return gen(max_n,min_n,w,h,K,Ki)
+        return None
     return p1, p2, x, P1, P2
 
-def main():
-    #seed = np.random.randint( 65536 )
-    #seed = 55507
-    seed = 34112
+def gen(*args, **kwargs):
+    while True:
+        res = _gen(*args, **kwargs)
+        if res is not None:
+            return res
 
+
+def main():
+    seed = np.random.randint( 65536 )
+    #seed = 55507
+    #seed = 34112
 
     print('seed', seed)
     np.random.seed( seed )
 
-    K = np.float32([500,0,320,0,500,240,0,0,1]).reshape(3,3)
+    #K = np.float32([500,0,320,0,500,240,0,0,1]).reshape(3,3)
+    K = np.float32([1260,0,280,0,1260,230,0,0,1]).reshape(3,3)
     K0 = K.copy()
 
     s_noise = 100.0
@@ -231,7 +239,8 @@ def main():
     print K0
 
     Fs = []
-    for _ in range(1024):
+    for i in range(128):
+        print '{}/{}'.format(i,128)
         p1, p2, x, P1, P2 = gen(min_n=64, K=K)
         F, _ = W.F(p1, p2,
                 method=cv2.FM_RANSAC,
@@ -253,7 +262,9 @@ def main():
 
     # two-step refinement?
     K0 = KruppaSolverMC()(K0, Fs)
+    print 'K', K
     K = KruppaSolver()(K0, Fs)
+    print 'K', K
 
 if __name__ == "__main__":
     main()

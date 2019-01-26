@@ -255,10 +255,10 @@ class DistSolver(object):
         n_it, res = self.rsc_(len(p1), max_it)
         if res is not None:
             m_l, m_F, m_i = res['model']
-            self.l_ = m_l[m_i]
-            return n_it, m_l[m_i], res['inl']
-        else:
-            return 0, self.l_, 0
+            if len(m_l) > m_i:
+                self.l_ = m_l[m_i]
+                return n_it, m_l[m_i], res['inl']
+        return 0, self.l_, np.zeros(len(p1), dtype=np.bool)
 
 def gen(max_n=100, min_n=16,
         w=640, h=480,
