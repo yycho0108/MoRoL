@@ -39,12 +39,14 @@ class CoDSolver(object):
         pass
     
 class DistSolver(object):
-    def __init__(self):
+    def __init__(self, w, h):
+        self.w_ = w
+        self.h_ = h
         self.rsc_ = RANSACModel(
                 n_model=9,
                 model_fn=self.rsc_model,
                 err_fn=self.rsc_err,
-                thresh=1e-6, # ??
+                thresh=1e-12, # ??
                 prob=0.999
                 )
         self.cache_ = {}
@@ -82,8 +84,8 @@ class DistSolver(object):
             up1 = dmodel_i(l_, p1)
             up2 = dmodel_i(l_, p2)
             err = sampson_error(M.to_h(up1), M.to_h(up2), F_)
+            #err = huber(1.0, err)
             #err = np.einsum('...a,ab,...b->...', M.to_h(up2), F_, M.to_h(up1))
-            #err = huber(1.0, np.square( err ))
             #err = np.abs( err )
             err_ = err.mean()
 
@@ -96,6 +98,14 @@ class DistSolver(object):
         return best_err
 
         #return best_err
+
+    def norm_fw(self, x):
+        w,h = self.w_, self.h_
+        return (x - [[w/2., h/2.]]) / (w + h)
+
+    def norm_bw(self, x):
+        w,h = self.w_, self.h_
+        return (x * (w+h)) + [[w/2., h/2.]]
 
     def _solve(self, D1, D2, D3):
         # D1,D2,D3 9xN
@@ -218,9 +228,23 @@ class DistSolver(object):
         #print ls
         return np.median(ls)
 
+    def undistort(self, p):
+        p = self.norm_fw(p)
+        p = dmodel_i(self.l_, p)
+        p = self.norm_bw(p)
+        return p
+
     def __call__(self, p1, p2, max_it=128):
         # epipolar constraint
         # p'^T.F.p = 0
+
+        # change of coordinates
+        p1 = self.norm_fw(p1)
+        p2 = self.norm_fw(p2)
+
+        # NOTE : lambda must be corrected by the actual focal length
+        # when that gets determined, I guess
+
         x1, y1 = p1[...,0], p1[...,1]
         r1_sq = np.square(x1) + np.square(y1)
         x2, y2 = p2[...,0], p2[...,1]
@@ -253,8 +277,8 @@ class DistSolver(object):
         n_it, res = self.rsc_(len(p1), max_it)
 
         m_l, m_F, m_i = res['model']
+        self.l_ = m_l[m_i]
         return n_it, m_l[m_i], res['inl']
-
 
 def gen(max_n=100, min_n=16,
         w=640, h=480,
@@ -298,6 +322,9 @@ def gen(max_n=100, min_n=16,
 
 
 def main():
+    w, h = (640, 480)
+    #l  = -1e-2
+    l = np.random.uniform(-0.1, 0.1)
     np.set_printoptions(5)
     seed = np.random.randint( 65536 )
     #seed = 13863
@@ -313,11 +340,13 @@ def main():
         0,0,1]).reshape(3,3)
     #K = np.eye(3)
 
-    #D = np.random.uniform(low=-1e-5, high=1e-5, size=5)
-    solver = DistSolver()
-    p1, p2, x, P1, P2 = gen(max_n=1024, min_n=256, K=K)
+    D = np.zeros(5)
+    D[0] = l
 
-    print 'p', len(p1)
+    solver = DistSolver(w,h)
+    p1, p2, x, P1, P2 = gen(max_n=1024, min_n=256,
+            w=w, h=h,
+            K=K)
 
     print 'F'
     print W.F(p1, p2)[0]
@@ -325,34 +354,41 @@ def main():
     print 'E'
     print E
 
-    # convert to normalized coordinates
+    # distort through OpenCV
     Ki = np.linalg.inv(K)
-    p1 = M.from_h(np.einsum('ab,...b->...a', Ki, M.to_h(p1)))
-    p2 = M.from_h(np.einsum('ab,...b->...a', Ki, M.to_h(p2)))
-    l  = 1e-4
-    print 'l (orig)', l
+    dp1 = W.project_points((M.to_h(np.random.normal(loc=p1, scale=0.01)).dot(Ki.T)),
+            rvec=np.zeros(3), tvec=np.zeros(3),
+            cameraMatrix=K,
+            distCoeffs=D)
+    dp2 = W.project_points((M.to_h(np.random.normal(loc=p2, scale=0.01)).dot(Ki.T)),
+            rvec=np.zeros(3), tvec=np.zeros(3),
+            cameraMatrix=K,
+            distCoeffs=D)
 
-    dp1 = dmodel(l, p1)
-    dp2 = dmodel(l, p2)
-
-    print p1.shape
-    print dp1.shape
-
-    print 'p1', p1[0]
-    print 'dp2', dp1[0]
-
-    #print p1 - dmodel_i(l, dp1)
-    #plt.plot(p1[:,0], p1[:,1], 'r+', label='orig')
-    #plt.plot(dp1[:,0], dp1[:,1], 'bx', label='dist')
-    #plt.legend()
-    #plt.show()
+    #print 'p1', p1[0]
+    #print 'dp1', dp1[0]
 
     l2 = solver(dp1, dp2)
+    print 'mystery ratio', l / l2[1]
     print ' === results === '
+    print 'orig', l
     print 'n_it', l2[0]
-    print 'dist', l2[1]
+    print 'dist (raw)', l2[1]
+    print 'dist (focal-corrected)', l2[1] * (K[1,1] / (w+h)) **2
     print 'n_in', l2[2].sum() / float(l2[2].size)
-    #print 'l2', l2
+
+    p1_r = solver.undistort( dp1 )
+    print 'distortion mean error', np.linalg.norm(dp1 - p1, axis=-1).mean()
+    print 'mean error', np.linalg.norm(p1_r - p1, axis=-1).mean()
+
+    plt.plot(p1[:,0], p1[:,1], 'r+', label='orig')
+    plt.plot(dp1[:,0], dp1[:,1], 'bx', label='dist')
+    plt.plot(p1_r[:,0], p1_r[:,1], 'g.', label='rec')
+    plt.plot([0,w,w,0,0],[0,0,h,h,0], 'k--')
+    plt.xlim([-w/4., w + w/4.])
+    plt.ylim([-h/4., h + h/4.])
+    plt.legend()
+    plt.show()
 
 if __name__ == "__main__":
     main()
