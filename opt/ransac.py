@@ -45,6 +45,8 @@ class RANSACModel(object):
         return model, err, inl, w
 
     def __call__(self, n_data, max_it):
+        if n_data < self.n_model_:
+            return 0, None
         # prepare result
         best = {
                 'model' : None,

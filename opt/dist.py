@@ -42,11 +42,12 @@ class DistSolver(object):
     def __init__(self, w, h):
         self.w_ = w
         self.h_ = h
+        self.l_ = 0.0
         self.rsc_ = RANSACModel(
                 n_model=9,
                 model_fn=self.rsc_model,
                 err_fn=self.rsc_err,
-                thresh=1e-12, # ??
+                thresh=(1e-1/(w+h))**2, # accept ~.01 threshold in pixel space
                 prob=0.999
                 )
         self.cache_ = {}
@@ -76,18 +77,14 @@ class DistSolver(object):
             return np.full(len(p1), np.inf)
 
         # TODO : compute error only on inliers?
-
-        best_err = np.inf
-        best_err_ = np.inf
+        best_err = np.full(len(p1), np.inf)
+        best_err_ = np.inf # avg
 
         for i, (l_, F_) in enumerate(zip(l,F)):
             up1 = dmodel_i(l_, p1)
             up2 = dmodel_i(l_, p2)
             err = sampson_error(M.to_h(up1), M.to_h(up2), F_)
-            #err = huber(1.0, err)
-            #err = np.einsum('...a,ab,...b->...', M.to_h(up2), F_, M.to_h(up1))
-            #err = np.abs( err )
-            err_ = err.mean()
+            err_ = err.mean() # avg
 
             if err_ < best_err_:
                 # update selection index
@@ -96,8 +93,6 @@ class DistSolver(object):
                 model[-1] = i
 
         return best_err
-
-        #return best_err
 
     def norm_fw(self, x):
         w,h = self.w_, self.h_
@@ -108,7 +103,7 @@ class DistSolver(object):
         return (x * (w+h)) + [[w/2., h/2.]]
 
     def _solve(self, D1, D2, D3):
-        # D1,D2,D3 9xN
+        # D1,D2,D3 Nx9
         if D1.shape != (9,9):
             D1_s = D1.T.dot(D1)
             D2_s = D1.T.dot(D2)
@@ -185,42 +180,21 @@ class DistSolver(object):
     def _no_ransac(self):
         # copied here for archival purposes. DO NOT USE
         ls = []
+        D1, D2, D3, p1, p2 = [self.cache_[k] for k in 'D1,D2,D3,p1,p2'.split(',')]
         n = len(D1)
 
-        # simple analysis
-        errmin = np.inf
-        lmin = None
+        ml = self._solve(D1,D2,D3)[0]
+        print ml
 
         for _ in range( max(n / 9, 1) ):
-            idx = np.random.choice(n, 9, replace=False)
+            idx = np.random.choice(n, 128, replace=False)
             l, F = self._solve(D1[idx], D2[idx], D3[idx])
-
-            if len(l) > 0:
-                # debugging
-                for l_, F_ in zip(l, F):
-                    up1 = dmodel_i(l_, p1)
-                    up2 = dmodel_i(l_, p2)
-                    err = np.einsum('...a,ab,...b->...', M.to_h(up2), F_, M.to_h(up1))
-                    avgerr = np.sqrt(np.square(huber(1.0, err)).mean())
-                    n_in = np.sum( np.square(err) < 1.0 )
-                    print '{}/{}'.format(n_in, len(up1))
-                    #print 'error', avgerr, l_
-                    if (n_in / float( len(err) ) > 0.5) and (avgerr < errmin):
-                        errmin = avgerr
-                        lmin = l_
             ls.extend(l)
-
-        print 'lmin', lmin
-        #print 'all',
-        #ls_a = self._solve(D1,D2,D3)
-        #print 'ls_a',
-        #print ls_a
-
         ls = np.array(ls, dtype=np.float64)
         #print 'sub',
-        #print ls
-        plt.hist(ls)
-        plt.show()
+        print ls
+        #plt.hist(ls)
+        #plt.show()
         #lo = np.percentile(ls, 20)
         #hi = np.percentile(ls, 80)
         #return ls[np.logical_and(lo<=ls, ls<hi)].mean()
@@ -234,7 +208,7 @@ class DistSolver(object):
         p = self.norm_bw(p)
         return p
 
-    def __call__(self, p1, p2, max_it=128):
+    def __call__(self, p1, p2, max_it=256):
         # epipolar constraint
         # p'^T.F.p = 0
 
@@ -274,11 +248,17 @@ class DistSolver(object):
         self.cache_['D3'] = D3
         self.cache_['p1'] = p1
         self.cache_['p2'] = p2
-        n_it, res = self.rsc_(len(p1), max_it)
 
-        m_l, m_F, m_i = res['model']
-        self.l_ = m_l[m_i]
-        return n_it, m_l[m_i], res['inl']
+        #l = self._no_ransac()
+        #self.l_ = l
+        #return 1, l, np.ones(len(p1), dtype=np.bool)
+        n_it, res = self.rsc_(len(p1), max_it)
+        if res is not None:
+            m_l, m_F, m_i = res['model']
+            self.l_ = m_l[m_i]
+            return n_it, m_l[m_i], res['inl']
+        else:
+            return 0, self.l_, 0
 
 def gen(max_n=100, min_n=16,
         w=640, h=480,
@@ -322,17 +302,17 @@ def gen(max_n=100, min_n=16,
 
 
 def main():
-    w, h = (640, 480)
-    #l  = -1e-2
-    l = np.random.uniform(-0.1, 0.1)
     np.set_printoptions(5)
     seed = np.random.randint( 65536 )
     #seed = 13863
     #seed = 21942
     #seed = 14549
-
+    #seed = 24814
     print 'seed', seed
     np.random.seed(seed)
+    w, h = (640, 480)
+
+    l = np.random.uniform(-0.2, 0.2)
 
     K = np.float32([
         500,0,320,
@@ -356,11 +336,11 @@ def main():
 
     # distort through OpenCV
     Ki = np.linalg.inv(K)
-    dp1 = W.project_points((M.to_h(np.random.normal(loc=p1, scale=0.01)).dot(Ki.T)),
+    dp1 = W.project_points((M.to_h(np.random.normal(loc=p1, scale=0.2)).dot(Ki.T)),
             rvec=np.zeros(3), tvec=np.zeros(3),
             cameraMatrix=K,
             distCoeffs=D)
-    dp2 = W.project_points((M.to_h(np.random.normal(loc=p2, scale=0.01)).dot(Ki.T)),
+    dp2 = W.project_points((M.to_h(np.random.normal(loc=p2, scale=0.2)).dot(Ki.T)),
             rvec=np.zeros(3), tvec=np.zeros(3),
             cameraMatrix=K,
             distCoeffs=D)
@@ -369,7 +349,6 @@ def main():
     #print 'dp1', dp1[0]
 
     l2 = solver(dp1, dp2)
-    print 'mystery ratio', l / l2[1]
     print ' === results === '
     print 'orig', l
     print 'n_it', l2[0]
@@ -380,6 +359,10 @@ def main():
     p1_r = solver.undistort( dp1 )
     print 'distortion mean error', np.linalg.norm(dp1 - p1, axis=-1).mean()
     print 'mean error', np.linalg.norm(p1_r - p1, axis=-1).mean()
+
+    p2_r = solver.undistort( dp2 )
+    print 'distortion mean error', np.linalg.norm(dp2 - p2, axis=-1).mean()
+    print 'mean error', np.linalg.norm(p2_r - p2, axis=-1).mean()
 
     plt.plot(p1[:,0], p1[:,1], 'r+', label='orig')
     plt.plot(dp1[:,0], dp1[:,1], 'bx', label='dist')

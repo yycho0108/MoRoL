@@ -111,10 +111,8 @@ class KruppaSolver(object):
                 )
 
         K = self.unwrap_K(res.x)
-        print 'K (optimized)'
-        print self.K2A(K)
-
-        #print 'es', e.shape
+        #print 'K (optimized)'
+        return self.K2A(K)
 
 class KruppaSolverMC(object):
     """
@@ -165,8 +163,8 @@ class KruppaSolverMC(object):
                 jac=self.jac,
                 **self.params_)
         A = self.unwrap_A(res.x)
-        print 'K (optimized)'
-        print A
+        #print 'K (optimized)'
+        #print A
         return A
 
 def gen(max_n=100, min_n=16,
