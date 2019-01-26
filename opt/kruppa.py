@@ -137,12 +137,12 @@ class KruppaSolverMC(object):
 
     def wrap_A(self, A, np=np):
         #fx,fy,cx,cy
-        return A[(0,0,1,1),(0,2,1,2)]#.ravel()
+        return A[(0,0,0,1,1),(0,1,2,1,2)]#.ravel()
 
     def unwrap_A(self, A, np=np):
         return np.array([
-            A[0],0,A[1],
-            0,A[2],A[3],
+            A[0],A[1],A[2],
+            0,A[3],A[4],
             0,0,1]).reshape(3,3)
 
     def err_anp(self, params, Fs):
@@ -161,6 +161,7 @@ class KruppaSolverMC(object):
                 self.err, self.wrap_A(A),
                 args=(Fs,),
                 jac=self.jac,
+                x_scale='jac',
                 **self.params_)
         A = self.unwrap_A(res.x)
         #print 'K (optimized)'
