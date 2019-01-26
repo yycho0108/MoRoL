@@ -28,13 +28,15 @@ def main():
     feat = cv2.ORB_create(nfeatures=1024)
     matcher = Matcher(des=feat)
 
-    cam = cv2.VideoCapture(1)
+    cam = cv2.VideoCapture(0)
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     kpt0 = None
     des0 = None
     Fs = []
+
+    cv2.namedWindow('win')
 
     while True:
         res, img = cam.read()
@@ -43,9 +45,9 @@ def main():
 
         kpt, des = feat.detectAndCompute(img, None)
         pt = cv2.KeyPoint.convert( kpt )
-        print pt[0]
-        pt = dsolver.undistort(pt)
-        print '-->', pt[0]
+        #print pt[0]
+        #pt = dsolver.undistort(pt)
+        #print '-->', pt[0]
 
         if des0 is None:
             kpt0 = pt
@@ -69,7 +71,7 @@ def main():
                 F, msk = W.F(pt_a, pt_b,
                         method=cv2.FM_RANSAC,
                         ransacReprojThreshold=0.5,
-                        confidence=0.99
+                        confidence=0.999
                         )
                 w = float(np.count_nonzero(msk)) / msk.size
                 print('w', w)
@@ -82,10 +84,10 @@ def main():
         print '{}/{}'.format( len(Fs), 256 )
 
         if len(Fs) > 256:
-            K1 = solver0(K0, Fs)
-            if mcheck(K1):
-                K0 = K1
-            print 'K1', K1
+            #K1 = solver0(K0, Fs)
+            #if mcheck(K1):
+            #    K0 = K1
+            #print 'K1', K1
 
             K1 = solver(K0, Fs)
             if mcheck(K1):
@@ -101,6 +103,7 @@ def main():
             des0 = des1
 
         img = cv2.drawKeypoints(img, kpt, img)
+        cv2.moveWindow('win', 500, 500)
         cv2.imshow('win', img)
 
         k = cv2.waitKey( 1 )

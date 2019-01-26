@@ -153,7 +153,7 @@ class KruppaSolverMC(object):
         return e
 
     def err(self, params, Fs, np=np):
-        A = self.unwrap_A(params[:4], np=np)
+        A = self.unwrap_A(params[:5], np=np)
         Es = np.einsum('ba,...bc,cd->...ad', A, Fs, A)
         s = np.linalg.svd(Es,full_matrices=False, compute_uv=False)
         c = (s[..., 0] / s[...,1]) - 1.0
