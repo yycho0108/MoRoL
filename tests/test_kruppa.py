@@ -2,6 +2,7 @@ from opt.kruppa import KruppaSolver, KruppaSolverMC
 from opt.dist import DistSolver
 from core.match import Matcher
 from utils import cv_wrap as W
+import viz as V
 import cv2
 import numpy as np
 
@@ -32,6 +33,9 @@ def main():
     cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+    db = []
+
+    img0 = None
     kpt0 = None
     des0 = None
     Fs = []
@@ -43,22 +47,15 @@ def main():
         if not res:
             break
 
+        # initial processing
         kpt, des = feat.detectAndCompute(img, None)
-        pt = cv2.KeyPoint.convert( kpt )
-        #print pt[0]
-        #pt = dsolver.undistort(pt)
-        #print '-->', pt[0]
-
-        if des0 is None:
-            kpt0 = pt
-            des0 = des
+        kpt = cv2.KeyPoint.convert( kpt )
+        #kpt = dsolver.undistort(kpt)
+        db.append([img, kpt, des])
+        if len(db) <= 1:
             continue
-
-        kpt1 = pt
-        des1 = des
-
-        if des1 is None:
-            continue
+        img0, kpt0, des0 = db[-2]
+        img1, kpt1, des1 = db[-1]
 
         i_m_h0, i_m_h1 = matcher(des0, des1,
                 **Matcher.PRESET_HARD
@@ -67,27 +64,34 @@ def main():
         pt_b = kpt1[i_m_h1]
 
         try:
-            if len(pt_a) > 16:
+            if len(pt_a) > 64:
                 F, msk = W.F(pt_a, pt_b,
                         method=cv2.FM_RANSAC,
-                        ransacReprojThreshold=0.5,
+                        ransacReprojThreshold=2.0,
                         confidence=0.999
                         )
                 w = float(np.count_nonzero(msk)) / msk.size
                 print('w', w)
-                if w > 0.5:
+                print np.linalg.matrix_rank(F)
+                if w > 0.4:
                     Fs.append( F )
         except Exception as e:
             print 'exception', e
             continue
 
-        print '{}/{}'.format( len(Fs), 256 )
+        print '{}/{}'.format( len(Fs), 512)
 
         if len(Fs) > 256:
-            #K1 = solver0(K0, Fs)
+            # save data for reference
+            imgs, kpts, dess = zip(*db)
+            np.save('/tmp/db_imgs.npy', imgs)
+            np.save('/tmp/db_kpts.npy', kpts)
+            np.save('/tmp/db_dess.npy', dess)
+
+            K1 = solver0(K0, Fs)
             #if mcheck(K1):
             #    K0 = K1
-            #print 'K1', K1
+            print 'K1', K1
 
             K1 = solver(K0, Fs)
             if mcheck(K1):
@@ -99,12 +103,15 @@ def main():
             kpt0 = None
             des0 = None
         else:
+            img0 = img1
             kpt0 = kpt1
             des0 = des1
 
-        img = cv2.drawKeypoints(img, kpt, img)
+        #img = cv2.drawKeypoints(img, kpt, img)
+        if kpt0 is not None and kpt1 is not None:
+            mim = V.draw_matches(img0, img1, kpt0, kpt1)
         cv2.moveWindow('win', 500, 500)
-        cv2.imshow('win', img)
+        cv2.imshow('win', mim)
 
         k = cv2.waitKey( 1 )
         if k == 27:
