@@ -43,7 +43,8 @@ class KruppaSolverMC(object):
         A = self.unwrap_A(params, np=np)
         Es = np.einsum('ba,...bc,cd->...ad', A, Fs, A)
         s = np.linalg.svd(Es,full_matrices=False, compute_uv=False)
-        c = (s[..., 0] / s[...,1]) - 1.0
+        #c = (s[..., 0] / s[...,1]) - 1.0
+        c = (s[...,0] - s[...,1]) / (s[...,0] + s[...,1])
         return c
 
     def __call__(self, A, Fs, Ws):

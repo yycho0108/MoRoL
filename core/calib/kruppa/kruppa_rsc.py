@@ -20,7 +20,7 @@ class KruppaSolverRANSAC(object):
                 n_model=5,
                 model_fn=self.rsc_model,
                 err_fn=self.rsc_err,
-                thresh=0.001, # don't really know what the right thresh is
+                thresh=0.01, # don't really know what the right thresh is
                 prob=0.999
                 )
             self.solver_ = KruppaSolverMC(verbose=0)
@@ -44,8 +44,8 @@ class KruppaSolverRANSAC(object):
             # update Fs with global Fs
             self.solver_.Fs_ = Fs
             err = self.solver_.err(self.solver_.wrap_A(model))
-            err = np.square(err)
-            #print 'median err', np.median(err)
+            #err = np.square(err)
+            print 'median err', np.median(err)
         else:
             K = self.solver_.A2K(model)
             u1,u2,u3 = [self.cache_[k] for k in ['u1','u2','u3']]
