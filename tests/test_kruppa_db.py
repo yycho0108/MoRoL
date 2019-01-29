@@ -60,7 +60,7 @@ def main():
     cov_solver = FundCov()
     #solver = KruppaSolverMC()
     #solver = KruppaSolver()
-    solver = KruppaSolverRANSAC(method='mc')
+    solver = KruppaSolverRANSAC(w,h,method='esv')
     K0 = np.float32([
         (w+h), 0.0, w/2.0,
         0.0, (w+h), h/2.0,
@@ -68,8 +68,12 @@ def main():
     #K0 = np.float32([200,0,200,0,200,200,0,0,1]).reshape(3,3)
     #K0 = np.float32([
     #    1260,0,280,0,1260,230,0,0,1]).reshape(3,3)
-    feat = cv2.ORB_create(nfeatures=1024)
+    #feat = cv2.ORB_create(nfeatures=1024)
+    feat = cv2.xfeatures2d.SURF_create()#nfeatures=1024)
     matcher = Matcher(des=feat)
+    
+    mcfg = Matcher.PRESET_HARD.copy()
+    mcfg['maxd'] = 256.0
 
     imgs = np.load('/tmp/db_imgs.npy')
     kpts = np.load('/tmp/db_kpts.npy')
@@ -87,7 +91,7 @@ def main():
             img1, kpt1, des1 = [e[j] for e in [imgs,kpts,dess]]
 
             i_m_h0, i_m_h1 = matcher(des0, des1,
-                    **Matcher.PRESET_HARD
+                    **mcfg
                     )
 
             if len(i_m_h0) < 32:
@@ -104,18 +108,18 @@ def main():
             #print 'rank', np.linalg.matrix_rank(F)
             n_in = np.count_nonzero(msk)
             r_in = n_in / float(msk.size)
-            #print 'n_in / r_in : {}, {}'.format(n_in, r_in)
+            print 'n_in / r_in : {}, {}'.format(n_in, r_in)
 
             r_err = np.einsum('...a,ab,...b', M.to_h(pt_b), F, M.to_h(pt_a))
             r_err = np.sqrt(np.square(r_err).mean())
             if n_in > 64 and r_in > 0.8 and r_err < 1.0:
-                #mim = V.draw_matches(img0, img1, pt_a, pt_b)
-                #cv2.imshow('mim', mim)
-                #k = cv2.waitKey(1)
-                #if k == ord('q'):
-                #    break
-                #if k == 27:
-                #    return
+                mim = V.draw_matches(img0, img1, pt_a, pt_b)
+                cv2.imshow('mim', mim)
+                k = cv2.waitKey(1)
+                if k == ord('q'):
+                    break
+                if k == 27:
+                    return
                 Fs.append( F )
                 #print err_F(F, pt_a[msk], pt_b[msk])
                 cov = cov_solver(F, pt_a[msk], pt_b[msk])
@@ -139,10 +143,12 @@ def main():
     ##    K0 = K1
     #print 'K1', K1
 
-    K1 = solver(K0, Fs, Ws)
+    n_it, K1, inl = solver(K0, Fs, Ws)
+    print 'n_it', n_it
+    print 'K1', K1
+    print 'inl', inl.sum() / float(inl.size)
     #if mcheck(K1):
     #    K0 = K1
-    print 'K1', K1
 
 if __name__ == "__main__":
     main()

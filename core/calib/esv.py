@@ -5,22 +5,25 @@ from scipy.optimize import least_squares
 from matplotlib import pyplot as plt
 
 class ESVSolver(object):
-    def __init__(self, w, h):
+    def __init__(self, w, h, verbose=True):
         self.w_, self.h_ = w,h
+        self.verbose_ = verbose
         self.cfg_ = {}
         self.params_ = dict(
-            ftol=1e-8,
-            xtol=1e-8,
+            ftol=1e-6,
+            xtol=1e-6,
             #gtol=1e-16,
             loss='linear',
             max_nfev=1024,
-            method='lm',
+            method='trf',
             #method='lm',
-            verbose=2,
+            #method='lm',
+            verbose=(2 if verbose else 0),
             #tr_solver='lsmr',
             tr_solver='exact',
             f_scale=0.1
             #f_scale=1.0
+            #x_scale='jac',
             )
         self.jac0 = jacobian(lambda x : self.cost0(x, np=anp))
         self.jac1 = jacobian(lambda x : self.cost1(x, np=anp))
@@ -57,6 +60,7 @@ class ESVSolver(object):
         dmr = np.square(self.trace(EET,np=np))
         nmr = dmr - 2.0 * self.trace(EETEET,np=np)
         err = nmr / dmr
+        # err = 1.0 - 2.0 * self.trace(EETEET,np=np) / np.square(self.trace(EET,np=np))
         #plt.hist(err, bins='auto')
         #plt.show()
 
@@ -76,7 +80,6 @@ class ESVSolver(object):
     def solve(self, params, err, jac):
         return least_squares(err, params,
                 jac=jac,
-                x_scale='jac',
                 **self.params_
                 )
 
@@ -100,6 +103,7 @@ class ESVSolver(object):
         res = self.solve(param, self.cost0, self.jac0)
         data = self.data(res.x)
         fx,fy,cx,cy,sk = [data[e] for e in ['fx','fy','cx','cy','sk']]
+        fx, fy = [np.abs(e) for e in [fx,fy]]
         K = np.array([fx,sk,cx,0,fy,cy,0,0,1]).reshape(3,3)
         return K
 
@@ -191,38 +195,51 @@ class ESVSolver(object):
         self.Fs_ = Fs
 
         # initial intrinsic parameters guess
-        print '0 (guess)'
+        if self.verbose_:
+            print '0 (guess)'
+        f0 = (self.w_ + self.h_) / 2.0
         self.K_ = np.float32([
-            self.w_+self.h_, 0, self.w_/2.0,
-            0, self.w_+self.h_, self.h_/2.0,
+            f0, 0, self.w_/2.0,
+            0, f0, self.h_/2.0,
             0,0,1]).reshape(3,3)
-        print self.K_
-        print '==============='
+        if self.verbose_:
+            print self.K_
+            print '==============='
 
-        print '1 (focal)'
+        if self.verbose_:
+            print '1 (focal)'
         self.K_ = self.step0()
-        print self.K_
-        print '==============='
+        if self.verbose_:
+            print self.K_
+            print '==============='
 
-        print '2 (aspect)'
+        if self.verbose_:
+            print '2 (aspect)'
         self.K_ = self.step1()
-        print self.K_
-        print '==============='
+        if self.verbose_:
+            print self.K_
+            print '==============='
 
-        print '3 (principal)'
+        if self.verbose_:
+            print '3 (principal)'
         self.K_ = self.step2()
-        print self.K_
-        print '==============='
+        if self.verbose_:
+            print self.K_
+            print '==============='
 
-        print '4 (focal)'
+        if self.verbose_:
+            print '4 (focal)'
         self.K_ = self.step3()
-        print self.K_
-        print '==============='
+        if self.verbose_:
+            print self.K_
+            print '==============='
 
-        print '5 (all)'
+        if self.verbose_:
+            print '5 (all)'
         self.K_ = self.step4()
-        print self.K_
-        print '==============='
+        if self.verbose_:
+            print self.K_
+            print '==============='
 
         return self.K_
 

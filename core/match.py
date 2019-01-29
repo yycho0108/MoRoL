@@ -20,8 +20,15 @@ class Matcher(object):
 
     def __init__(self, des):
         # define un-exported enums from OpenCV
-        FLANN_INDEX_KDTREE = 0
+        FLANN_INDEX_LINEAR = 0
+        FLANN_INDEX_KDTREE = 1
+        FLANN_INDEX_KMEANS = 2
+        FLANN_INDEX_COMPOSITE = 3
+        FLANN_INDEX_KDTREE_SINGLE = 4
+        FLANN_INDEX_HIERARCHICAL = 5
         FLANN_INDEX_LSH = 6
+        FLANN_INDEX_SAVED = 254
+        FLANN_INDEX_AUTOTUNED = 255
 
         # TODO : figure out what to set for
         # search_params
@@ -32,27 +39,29 @@ class Matcher(object):
         self.des_t_ = (np.uint8 if des.descriptorType() == cv2.CV_8U
                 else np.float32)
 
-        if isinstance(des, cv2.ORB) or isinstance(des, cv2.AKAZE):
+        #if isinstance(des, cv2.ORB) or isinstance(des, cv2.AKAZE):
+        if self.des_t_ == np.uint8:
+            # probably hamming
             # ~HAMMING
             index_params= dict(algorithm = FLANN_INDEX_LSH,
-                       table_number = 6, # 12
-                       key_size = 12,     # 20
-                       multi_probe_level = 1) #2
+                       table_number = 12,#6, # 12
+                       key_size = 20,#12,     # 20
+                       multi_probe_level = 2) #2
             flann = cv2.FlannBasedMatcher(index_params,search_params)
-            self.flann_ = flann
-            fn = lambda a,b : flann.knnMatch(np.uint8(a), np.uint8(b), k=2)
+            self.match_ = flann
+            #bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+            #self.match_ = bf
         else:
             # Euclidean
             index_params = dict(
                     algorithm = FLANN_INDEX_KDTREE,
                     trees = 5)
             flann = cv2.FlannBasedMatcher(index_params,search_params)
-            self.flann_ = flann
-            fn = lambda a,b : flann.knnMatch(np.float32(a), np.float32(b), k=2)
+            self.match_ = flann
 
     def match(self, a, b):
         """ search k matches in b for a """
-        return self.flann_.knnMatch(
+        return self.match_.knnMatch(
                 self.des_t_(a), self.des_t_(b), k=2)
 
     def filter(self, match, lowe, maxd):
@@ -68,6 +77,7 @@ class Matcher(object):
             (m, n) = e
             if not (m.distance <= lowe * n.distance):
                 continue
+            #print m.distance
             if not (m.distance <= maxd):
                 continue
 

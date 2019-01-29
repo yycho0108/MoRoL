@@ -19,71 +19,72 @@ def mcheck(x):
         return False
     return True
 
-class FundCov(object):
-    def __init__(self):
-        self.pt_a_ = None
-        self.pt_b_ = None
-        self.jac = jacobian(self.err_anp)
-
-    def err_anp(self, F):
-        return self.err(F, np=anp)
-
-    def err(self, F, np=np):
-        pt_a = self.pt_a_
-        pt_b = self.pt_b_
-        e = np.einsum('...a,ab,...b', M.to_h(pt_b), F.reshape(3,3), M.to_h(pt_a))
-        return np.ravel(e)
-
-    @staticmethod
-    def jac_to_cov(J):
-        """ from scipy/optimize/minpack.py#L739 """
-        _, s, VT = np.linalg.svd(J, full_matrices=False)
-        thresh = np.finfo(np.float32).eps * max(J.shape) * s[0]
-        s = s[s > thresh]
-        VT = VT[:s.size]
-        cov = np.dot(VT.T / s**2, VT)
-        return cov
-
-    def __call__(self, F, pt_a, pt_b):
-        self.pt_a_ = pt_a
-        self.pt_b_ = pt_b
-        J = self.jac(F.ravel())
-        return self.jac_to_cov(J)
-
-def jac_F(F, pt_a, pt_b, np=np):
-    jacobian(err_F,self.err_anp)#, np=anp)
-    return 
+def detect_and_compute(img, det, des):
+    k = det.detect(img, None)
+    #rsp = [e.response for e in k]
+    #k = np.asarray(k, dtype=cv2.KeyPoint)
+    #k = k[np.argsort(rsp)[::-1]]
+    #k = k[:256]
+    #k = SSC(k, 256, 0.1, img.shape[1], img.shape[0])
+    k, d = des.compute(img, k)
+    return k, d
 
 def main():
-    w, h = 640, 480
-    solver = ESVSolver(w,h)
-    K0 = np.float32([
-        (w+h), 0.0, w/2.0,
-        0.0, (w+h), h/2.0,
-        0, 0, 1]).reshape(3,3)
-    #K0 = np.float32([200,0,200,0,200,200,0,0,1]).reshape(3,3)
-    #K0 = np.float32([
-    #    1260,0,280,0,1260,230,0,0,1]).reshape(3,3)
-    feat = cv2.ORB_create(nfeatures=1024)
-    matcher = Matcher(des=feat)
+    #feat = cv2.ORB_create(nfeatures=1024)
+    #feat = cv2.AKAZE_create()
+    #feat = cv2.xfeatures2d.SIFT_create(512)
+
+    det = cv2.FastFeatureDetector_create(40, True)
+    des = cv2.xfeatures2d.BoostDesc_create()
+
+    matcher = Matcher(des=des)
+    match_cfg = Matcher.PRESET_HARD.copy()
+    match_cfg['maxd'] = 32.0
 
     imgs = np.load('/tmp/db_imgs.npy')
-    kpts = np.load('/tmp/db_kpts.npy')
-    dess = np.load('/tmp/db_dess.npy')
+    #kpts = np.load('/tmp/db_kpts.npy')
+    #dess = np.load('/tmp/db_dess.npy')
+
+    #src = np.setxor1d(range(15), [8, 10])
+    src = range(15)
+    #imgs = [cv2.imread('/home/jamiecho/Downloads/images/%03d.tif' % i) for i in src]
+    #imgs = [e for e in imgs if e is not None]
+    #imgs = [cv2.imread('/home/jamiecho/Downloads/images/%03d.tif' % i) for i in [2,3,4,5,6,9]]
+
+    kpts = None
+    dess = None
+    if kpts is None:
+        print 'building kpt/des cache ...'
+        kpts = []
+        dess = []
+        for img in imgs:
+            k, d = detect_and_compute(img, det, des)
+            kpts.append(np.asarray(cv2.KeyPoint.convert(k)))
+            dess.append( d )
+        print 'kpt/des cache complete!'
+
     Fs = []
     Ws = []
-
     for i in range(0, len(imgs)):
         print '{}/{}'.format(i, len(imgs))
         for j in range(i-8, i+8):
+        #for j in range(i+1, len(imgs)):
             if i==j: continue
             if j<0 or j>=len(imgs): continue
 
+            # use db input
             img0, kpt0, des0 = [e[i] for e in [imgs,kpts,dess]]
             img1, kpt1, des1 = [e[j] for e in [imgs,kpts,dess]]
 
+            if des0 is None or des1 is None:
+                continue
+            if len(des0) <= 2 or len(des1) <= 2:
+                continue
+
+            h, w = img0.shape[:2]
+
             i_m_h0, i_m_h1 = matcher(des0, des1,
-                    **Matcher.PRESET_HARD
+                    **match_cfg
                     )
 
             if len(i_m_h0) < 32:
@@ -105,14 +106,18 @@ def main():
             r_err = np.einsum('...a,ab,...b', M.to_h(pt_b), F, M.to_h(pt_a))
             r_err = np.sqrt(np.square(r_err).mean())
             if n_in > 64 and r_in > 0.8 and r_err < 1.0:
-                #mim = V.draw_matches(img0, img1, pt_a, pt_b)
-                #cv2.imshow('mim', mim)
-                #k = cv2.waitKey(1)
-                #if k == ord('q'):
-                #    break
-                #if k == 27:
-                #    return
+                mim = V.draw_matches(img0, img1, pt_a, pt_b,
+                        msk=msk
+                        )
+                cv2.imshow('mim', mim)
+                k = cv2.waitKey(1)
+                if k == ord('q'):
+                    break
+                if k == 27:
+                    return
                 Fs.append( F )
+                if len(Fs) > 0 and len(Fs) % 10 == 0:
+                    print len(Fs)
 
     print 'fs-len', len(Fs)
 
@@ -120,7 +125,7 @@ def main():
     Ws = np.asarray(Ws)
     #Ws *= Ws.size / Ws.sum()
 
-    Fs = Fs[np.random.choice(len(Fs), size=128)]
+    #Fs = Fs[np.random.choice(len(Fs), size=128)]
     #Fs = Fs[np.random.choice(len(Fs), size=128)]
 
     # solve focal length first
@@ -134,6 +139,7 @@ def main():
     ##    K0 = K1
     #print 'K1', K1
 
+    solver = ESVSolver(w, h)
     K1 = solver(Fs)
     #if mcheck(K1):
     #    K0 = K1
