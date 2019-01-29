@@ -58,9 +58,9 @@ def main():
     w, h = 640, 480
     foc_solver = FocalSolverStrum(w, h)
     cov_solver = FundCov()
-    solver0 = KruppaSolverMC()
+    #solver = KruppaSolverMC()
     #solver = KruppaSolver()
-    solver = KruppaSolverRANSAC()
+    solver = KruppaSolverRANSAC(method='mc')
     K0 = np.float32([
         (w+h), 0.0, w/2.0,
         0.0, (w+h), h/2.0,

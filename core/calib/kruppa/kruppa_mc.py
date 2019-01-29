@@ -8,7 +8,7 @@ class KruppaSolverMC(object):
     http://homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/FUSIELLO3/node4.html
     ftp://mi.eng.cam.ac.uk/pub/reports/mendonca_self-calibration.pdf
     """
-    def __init__(self):
+    def __init__(self, verbose=2):
         self.params_ = dict(
             ftol=1e-5,
             xtol=1e-7,
@@ -17,7 +17,7 @@ class KruppaSolverMC(object):
             max_nfev=1024,
             method='lm',
             #method='trf',
-            verbose=2,
+            verbose=verbose,
             #tr_solver='lsmr',
             tr_solver='exact',
             f_scale=100.0
@@ -45,7 +45,8 @@ class KruppaSolverMC(object):
         c = (s[..., 0] / s[...,1]) - 1.0
         return c
 
-    def __call__(self, A, Fs):
+    def __call__(self, A, Fs, Ws):
+        self.Ws_ = Ws
         res = least_squares(
                 self.err, self.wrap_A(A),
                 args=(Fs,),

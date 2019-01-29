@@ -13,6 +13,7 @@ from scipy.linalg import lu as LU
 from matplotlib import pyplot as plt
 
 def mul3(a,b,c,np=np):
+    """ convenient shorthand for computing a.T.b.c """
     # nx3 * 3x3 * nx3
     return np.einsum('...a,ab,...b->...',a,b,c,
             optimize=True)
