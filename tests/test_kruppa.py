@@ -1,4 +1,4 @@
-from opt.kruppa import KruppaSolver, KruppaSolverMC
+from core.calib.kruppa import KruppaSolver, KruppaSolverMC
 from opt.dist import DistSolver
 from core.match import Matcher
 from utils import cv_wrap as W
@@ -6,12 +6,19 @@ import viz as V
 import cv2
 import numpy as np
 
+import autograd.numpy as anp
+from autograd import jacobian
+
 def mcheck(x):
     if x is None:
         return False
     if np.any(np.isnan(x)):
         return False
     return True
+
+def err_F(F, pt_a, pt_b):
+    e = np.einsum('...a,ab,...b', pt_a, F, pt_b)
+    return e
 
 def main():
     w, h = 640, 480
@@ -74,6 +81,7 @@ def main():
                 print('w', w)
                 print np.linalg.matrix_rank(F)
                 if w > 0.4:
+                    c = cov_F(F, pt_a[msk], pt_b[msk])
                     Fs.append( F )
         except Exception as e:
             print 'exception', e
