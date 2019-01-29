@@ -20,7 +20,7 @@ class KruppaSolverRANSAC(object):
                 n_model=5,
                 model_fn=self.rsc_model,
                 err_fn=self.rsc_err,
-                thresh=0.0001, # don't really know what the right thresh is
+                thresh=0.001, # don't really know what the right thresh is
                 prob=0.999
                 )
             self.solver_ = KruppaSolverMC(verbose=0)
@@ -41,9 +41,11 @@ class KruppaSolverRANSAC(object):
             return np.full(len(self.Fs_), np.inf)
 
         if isinstance(self.solver_, KruppaSolverMC):
-            err = self.solver_.err(self.solver_.wrap_A(model), Fs)
+            # update Fs with global Fs
+            self.solver_.Fs_ = Fs
+            err = self.solver_.err(self.solver_.wrap_A(model))
             err = np.square(err)
-            print 'median err', np.median(err)
+            #print 'median err', np.median(err)
         else:
             K = self.solver_.A2K(model)
             u1,u2,u3 = [self.cache_[k] for k in ['u1','u2','u3']]
@@ -85,11 +87,7 @@ class KruppaSolverRANSAC(object):
         for k in ['u1','u2','u3','v1','v2','v3','s1','s2']:
             self.cache_[k] = vars()[k]
 
-        try:
-            n_it, res = self.rsc_(len(Fs), max_it)
-            if res is not None:
-                return n_it, res['model'], res['inl']
-        except Exception as e:
-            print 'exception', e
-            pass
+        n_it, res = self.rsc_(len(Fs), max_it)
+        if res is not None:
+            return n_it, res['model'], res['inl']
         return 0, None, np.zeros(len(Fs), dtype=np.bool)

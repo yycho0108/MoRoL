@@ -34,11 +34,12 @@ class KruppaSolverMC(object):
             0,A[3],A[4],
             0,0,1]).reshape(3,3)
 
-    def err_anp(self, params, Fs):
-        e = self.err(params, Fs, np=anp)
+    def err_anp(self, params):
+        e = self.err(params, np=anp)
         return e
 
-    def err(self, params, Fs, np=np):
+    def err(self, params, np=np):
+        Fs = self.Fs_
         A = self.unwrap_A(params, np=np)
         Es = np.einsum('ba,...bc,cd->...ad', A, Fs, A)
         s = np.linalg.svd(Es,full_matrices=False, compute_uv=False)
@@ -46,10 +47,10 @@ class KruppaSolverMC(object):
         return c
 
     def __call__(self, A, Fs, Ws):
+        self.Fs_ = Fs
         self.Ws_ = Ws
         res = least_squares(
                 self.err, self.wrap_A(A),
-                args=(Fs,),
                 jac=self.jac,
                 x_scale='jac',
                 **self.params_)

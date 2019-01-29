@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 from utils.data import gen
 from utils import cv_wrap as W
-from core.calib.kruppa import KruppaSolverRANSAC
+from core.calib.kruppa import KruppaSolverRANSAC, KruppaSolverMC
 
 def main():
     seed = np.random.randint( 65536 )
@@ -57,7 +57,8 @@ def main():
     #print 'K', K
 
     #K = KruppaSolver()(K0, Fs)
-    K = KruppaSolverRANSAC()(K0, Fs, Ws)
+    #K = KruppaSolverRANSAC()(K0, Fs, Ws)
+    K = KruppaSolverMC()(K0, Fs, Ws)
 
     print 'K', K
 
