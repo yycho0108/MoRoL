@@ -3,10 +3,13 @@ from autograd import numpy as anp
 from autograd import jacobian
 from scipy.optimize import least_squares
 from matplotlib import pyplot as plt
+from utils import vmath as M
 
 class ESVSolver(object):
     def __init__(self, w, h, verbose=True):
         self.w_, self.h_ = w,h
+        self.Fs_ = None
+        self.Ws_ = None
         self.verbose_ = verbose
         self.cfg_ = {}
         self.params_ = dict(
@@ -57,14 +60,16 @@ class ESVSolver(object):
 
         EETEET = np.einsum('...ab,...bc->...ac', EET, EET)
 
-        dmr = np.square(self.trace(EET,np=np))
-        nmr = dmr - 2.0 * self.trace(EETEET,np=np)
-        err = nmr / dmr
-        # err = 1.0 - 2.0 * self.trace(EETEET,np=np) / np.square(self.trace(EET,np=np))
+        #dmr = np.square(self.trace(EET,np=np))
+        #nmr = dmr - 2.0 * self.trace(EETEET,np=np)
+        #err = nmr / dmr
+
+        err = 1.0 - 2.0 * self.trace(EETEET,np=np) / np.square(self.trace(EET,np=np))
         #plt.hist(err, bins='auto')
         #plt.show()
-
-        return err.ravel()
+        if self.Ws_ is None:
+            return err.ravel()
+        return self.Ws_ * err.ravel()
 
     def cost1(self, params, np=np):
         data = self.data(params)
@@ -75,7 +80,10 @@ class ESVSolver(object):
         s = np.linalg.svd(Es, full_matrices=False, compute_uv=False)
         s1 = s[..., 0]
         s2 = s[..., 1]
-        return (s1 - s2) / (s1 + s2)
+        err = (s1 - s2) / (s1 + s2)
+        if self.Ws_ is None:
+            return err.ravel()
+        return self.Ws_ * err.ravel()
     
     def solve(self, params, err, jac):
         return least_squares(err, params,
@@ -191,8 +199,9 @@ class ESVSolver(object):
         K = np.array([fx,sk,cx,0,fy,cy,0,0,1]).reshape(3,3)
         return K
 
-    def __call__(self, Fs):
+    def __call__(self, Fs, Ws=None):
         self.Fs_ = Fs
+        self.Ws_ = Ws
 
         # initial intrinsic parameters guess
         if self.verbose_:
@@ -240,6 +249,19 @@ class ESVSolver(object):
         if self.verbose_:
             print self.K_
             print '==============='
+
+        if self.verbose_:
+            x = self.K_[(0,1,0,1),(0,1,2,2)]
+            e0 = self.cost0(x)
+            J0 = self.jac0(x)
+            e1 = self.cost1(x)
+            J1 = self.jac1(x)
+            cov0 = M.jac_to_cov(J0, e0)
+            cov1 = M.jac_to_cov(J1, e1)
+            print cov0
+            print 'fx,fy,cx,cy std [0]', np.sqrt(np.diag(cov0))
+            print cov1
+            print 'fx,fy,cx,cy std [1]', np.sqrt(np.diag(cov1))
 
         return self.K_
 

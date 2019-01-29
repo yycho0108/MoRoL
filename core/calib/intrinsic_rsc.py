@@ -21,8 +21,7 @@ from matplotlib import pyplot as plt
 #def nister_err(pt1, pt2, F, K):
 #    E = np.einsum('ba,...bc,cd->...ad', K, F, K)
 
-
-class KruppaSolverRANSAC(object):
+class IntrinsicSolverRANSAC(object):
     def __init__(self, w, h, method='hz'):
         self.w_ = w
         self.h_ = h
@@ -32,7 +31,7 @@ class KruppaSolverRANSAC(object):
                     n_model=3,
                     model_fn=self.rsc_model,
                     err_fn=self.rsc_err,
-                    thresh=0.1, # don't really know what the right thresh is
+                    thresh=1e-5, # don't really know what the right thresh is
                     prob=0.999
                     )
             self.solver_ = KruppaSolver(verbose=0)
@@ -41,16 +40,16 @@ class KruppaSolverRANSAC(object):
                     n_model=5,
                     model_fn=self.rsc_model,
                     err_fn=self.rsc_err,
-                    thresh=0.1, # don't really know what the right thresh is
+                    thresh=1e-5, # don't really know what the right thresh is
                     prob=0.999
                     )
             self.solver_ = KruppaSolverMC(verbose=0)
         elif method == 'esv':
             self.rsc_ = RANSACModel(
-                    n_model=5,
+                    n_model=15, # overparametrized; maybe more stable
                     model_fn=self.rsc_model,
                     err_fn=self.rsc_err,
-                    thresh=0.005, # don't really know what the right thresh is
+                    thresh=1e-5, # don't really know what the right thresh is
                     prob=0.999
                     )
             self.solver_ = ESVSolver(w,h,verbose=False)
@@ -62,11 +61,13 @@ class KruppaSolverRANSAC(object):
 
     def rsc_model(self, idx):
         K0 = self.K_
+        Ws = (self.Ws_[idx] if (self.Ws_ is not None) else None)
+
         if isinstance(self.solver_, ESVSolver):
             # TODO : maybe at least support Ws input for ESV
-            K = self.solver_(self.Fs_[idx])
+            K = self.solver_(self.Fs_[idx], Ws)
         else:
-            K = self.solver_(K0, self.Fs_[idx], self.Ws_[idx])
+            K = self.solver_(K0, self.Fs_[idx], Ws)
         return K
 
     def rsc_err(self, model):
@@ -98,13 +99,19 @@ class KruppaSolverRANSAC(object):
         err23 = ((e2 - e3)).ravel()
         err31 = ((e1 - e3)).ravel()
         err = np.square(err12) + np.square(err23) + np.square(err31)
+
         #plt.hist(err, bins='auto')
         #plt.show()
+
         #apply huber loss
-        err = np.where(err < 0.01, err, 2*err**0.5-1)
+        #err = np.where(err < 0.01, err, 2*err**0.5-1)
+
+        if self.Ws_ is not None:
+            err = self.Ws_ * err
+        print '20-50-80', [np.percentile(err, e) for e in [20,50,80]]
         return err
     
-    def __call__(self, A, Fs, Ws, max_it=512):
+    def __call__(self, A, Fs, Ws=None, max_it=512):
         self.K_ = A
         self.Fs_ = Fs
         self.Ws_ = Ws

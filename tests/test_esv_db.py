@@ -1,5 +1,6 @@
 from core.calib.focal import FocalSolverStrum
 from core.calib.esv import ESVSolver
+from core.calib.intrinsic_rsc import IntrinsicSolverRANSAC
 
 from opt.dist import DistSolver
 from core.match import Matcher
@@ -39,7 +40,7 @@ def main():
 
     matcher = Matcher(des=des)
     match_cfg = Matcher.PRESET_HARD.copy()
-    match_cfg['maxd'] = 32.0
+    match_cfg['maxd'] = 64.0
 
     imgs = np.load('/tmp/db_imgs.npy')
     #kpts = np.load('/tmp/db_kpts.npy')
@@ -116,14 +117,15 @@ def main():
                 if k == 27:
                     return
                 Fs.append( F )
+                Ws.append( n_in )
                 if len(Fs) > 0 and len(Fs) % 10 == 0:
                     print len(Fs)
 
     print 'fs-len', len(Fs)
 
     Fs = np.asarray(Fs)
-    Ws = np.asarray(Ws)
-    #Ws *= Ws.size / Ws.sum()
+    Ws = np.asarray(Ws, dtype=np.float32)
+    Ws /= Ws.max()
 
     #Fs = Fs[np.random.choice(len(Fs), size=128)]
     #Fs = Fs[np.random.choice(len(Fs), size=128)]
@@ -133,14 +135,21 @@ def main():
     #K0[0,0] = K0[1,1] = f
     #print('updated Kmat through focal length initialization : {}'.format(K0))
 
-
     #K1 = solver0(K0, Fs)
     ##if mcheck(K1):
     ##    K0 = K1
     #print 'K1', K1
 
     solver = ESVSolver(w, h)
-    K1 = solver(Fs)
+    K1 = solver(Fs, Ws)
+    
+    #K0 = np.float32([
+    #    (w+h), 0.0, w/2.0,
+    #    0.0, (w+h), h/2.0,
+    #    0, 0, 1]).reshape(3,3)
+    #solver = IntrinsicSolverRANSAC(w,h,method='esv')
+    #K1 = solver(K0, Fs, Ws)
+
     #if mcheck(K1):
     #    K0 = K1
     print 'K1', K1

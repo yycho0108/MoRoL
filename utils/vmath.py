@@ -218,3 +218,21 @@ def F2E(F, K=None, Ki=None):
         K = inv(Ki)
     return np.linalg.multi_dot([
         K.T, F, K])
+
+def jac_to_cov(J, e=None):
+    """ from scipy/optimize/minpack.py#L739 """
+
+    #JT = J.swapaxes(-1,-2)
+    #JTJ = np.einsum('...ab,...bc->...ac', JT, J)
+    #cov = np.linalg.pinv(JTJ)
+
+    _, s, VT = np.linalg.svd(J, full_matrices=False)
+    thresh = np.finfo(np.float32).eps * max(J.shape) * s[0]
+    s = s[s > thresh]
+    VT = VT[:s.size]
+
+    cov = np.dot(VT.T / s**2, VT)
+    if e is not None:
+        rhs = np.square(e).sum() / (len(e) - 4.0)
+        cov = cov * rhs
+    return cov
