@@ -5,8 +5,6 @@ from utils import cv_wrap as W
 from tf import transformations as tx
 import cv2
 from matplotlib import pyplot as plt
-from scipy.special import huber
-
 from opt.ransac import RANSACModel
 
 def dmodel(l, x):
@@ -259,47 +257,6 @@ class DistSolver(object):
                 self.l_ = m_l[m_i]
                 return n_it, m_l[m_i], res['inl']
         return 0, self.l_, np.zeros(len(p1), dtype=np.bool)
-
-def gen(max_n=100, min_n=16,
-        w=640, h=480,
-        K=None, Ki=None,
-        ):
-    if Ki is None:
-        Ki = np.linalg.inv(K)
-
-    p1 = np.random.uniform((0,0), (w,h), size=(max_n,2))
-    d  = np.random.uniform(0.01, 100.0, size=(max_n,))
-    #d[:] = 1.0 # planar scene
-    x = d[:,None] * np.einsum('ab,...b->...a', Ki, M.to_h(p1))
-    P1 = np.eye(3,4)
-
-    rxn = np.random.uniform(-np.pi, np.pi, size=3)
-    txn = np.random.uniform(-np.pi, np.pi, size=3)
-    #txn *= 0.01#0.00000000001
-    #print 'txn', txn
-    #print 'rxn', rxn
-    #print 'u-tx', M.uvec(txn)
-
-    P2 = tx.compose_matrix(
-            angles=rxn, translate=txn)[:3]
-
-    p2h = np.einsum('ab,bc,...c->...a',
-            K, P2, M.to_h(x))
-    p2 = M.from_h(p2h)
-
-    msk = np.logical_and.reduce([
-        (p2h[..., -1] >= 0),
-        0 <= p2[...,0],
-        0 <= p2[...,1],
-        p2[...,0] < w,
-        p2[...,1] < h,
-        ])
-    p1, p2, x = [e[msk] for e in [p1,p2,x]]
-    if len(p1) < min_n:
-        # retry
-        return gen(max_n,min_n,w,h,K,Ki)
-    return p1, p2, x, P1, P2
-
 
 def main():
     np.set_printoptions(5)

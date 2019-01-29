@@ -1,4 +1,6 @@
 from core.calib.kruppa import KruppaSolver, KruppaSolverMC, KruppaSolverRANSAC
+from core.calib.focal import FocalSolverStrum
+
 from opt.dist import DistSolver
 from core.match import Matcher
 from utils import cv_wrap as W
@@ -54,6 +56,7 @@ def jac_F(F, pt_a, pt_b, np=np):
 
 def main():
     w, h = 640, 480
+    foc_solver = FocalSolverStrum(w, h)
     cov_solver = FundCov()
     solver0 = KruppaSolverMC()
     #solver = KruppaSolver()
@@ -123,6 +126,12 @@ def main():
     Fs = np.asarray(Fs)
     Ws = np.asarray(Ws)
     Ws *= Ws.size / Ws.sum()
+
+    # solve focal length first
+    f = foc_solver(Fs)
+    K0[0,0] = K0[1,1] = f
+    print('updated Kmat through focal length initialization : {}'.format(K0))
+
     #Fs = Fs[np.random.choice(len(Fs), size=128)]
 
     #K1 = solver0(K0, Fs)

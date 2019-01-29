@@ -137,22 +137,6 @@ class KruppaSolver(object):
     def __call__(self, A, Fs, Ws):
         # A = camera Matrix
 
-        # strum's focal length approximation
-        #gl, gr = np.eye(3), np.eye(3)
-        #gl[2,0] = 320.0
-        #gl[2,1] = 240.0
-        #gr[0,2] = 320.0
-        #gr[1,2] = 240.0 # TODO : make this not hardcoded
-        #Gs = np.einsum('ab,...bc,cd',gl,Fs,gr)
-        #U, S, Vt = np.linalg.svd(Gs)
-        #u1, u2, u3 = U[...,:,0], U[...,:,1], U[...,:,2]
-        #v1, v2, v3 = Vt[...,0,:], Vt[...,1,:], Vt[...,2,:]
-        #s1, s2  = S[...,0], S[...,1]
-        #f = solve_focal(s1, s2, u1, u2, u3, v1, v2, v3)
-        #print 'focal estimate', f
-        #A = A.copy()
-        #A[0,0] = A[1,1] = f
-
         # Fs = Nx3x3 Fundamental Matrix
         U, S, Vt = np.linalg.svd(Fs)
         u1, u2, u3 = U[...,:,0], U[...,:,1], U[...,:,2]

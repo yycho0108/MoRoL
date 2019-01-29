@@ -1,11 +1,5 @@
 import numpy as np
 
-class StrumFocal(object):
-    def __init__(self):
-        pass
-    def __call__(self):
-        pass
-
 def solve_focal(s1, s2, u1, u2, u3, v1, v2, v3):
     """ strum's focal calibration """
     u11,u12,u13 = u1[...,0], u1[...,1], u1[...,2]
@@ -45,9 +39,28 @@ def solve_focal(s1, s2, u1, u2, u3, v1, v2, v3):
         #np.logical_not( np.isclose(fsq, 1.0) )
         ])
     foc = np.sqrt( fsq[msk] )
-    np.save('/tmp/focs.npy', foc)
+    #np.save('/tmp/focs.npy', foc)
     #plt.hist(foc)
     #plt.show()
     return np.median( foc )
 
+class FocalSolverStrum(object):
+    def __init__(self, w, h):
+        self.w_ = w
+        self.h_ = h
 
+    def __call__(self, Fs):
+        w, h = self.w_, self.h_
+        gl, gr = np.eye(3), np.eye(3)
+        gl[2,0] = w / 2.0
+        gl[2,1] = h / 2.0
+        gr[0,2] = w / 2.0
+        gr[1,2] = h / 2.0
+
+        Gs = np.einsum('ab,...bc,cd',gl,Fs,gr) # 'semi-calibrated' space
+        U, S, Vt = np.linalg.svd(Gs)
+        u1, u2, u3 = U[...,:,0], U[...,:,1], U[...,:,2]
+        v1, v2, v3 = Vt[...,0,:], Vt[...,1,:], Vt[...,2,:]
+        s1, s2  = S[...,0], S[...,1]
+        f = solve_focal(s1, s2, u1, u2, u3, v1, v2, v3)
+        return f
