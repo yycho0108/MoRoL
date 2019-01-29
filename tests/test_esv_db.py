@@ -106,16 +106,17 @@ def main():
 
             r_err = np.einsum('...a,ab,...b', M.to_h(pt_b), F, M.to_h(pt_a))
             r_err = np.sqrt(np.square(r_err).mean())
-            if n_in > 64 and r_in > 0.8 and r_err < 1.0:
-                mim = V.draw_matches(img0, img1, pt_a, pt_b,
-                        msk=msk
-                        )
-                cv2.imshow('mim', mim)
-                k = cv2.waitKey(1)
-                if k == ord('q'):
-                    break
-                if k == 27:
-                    return
+            #if n_in > 64 and r_in > 0.8 and r_err < 1.0:
+            if True:
+                #mim = V.draw_matches(img0, img1, pt_a, pt_b,
+                #        msk=msk
+                #        )
+                #cv2.imshow('mim', mim)
+                #k = cv2.waitKey(1)
+                #if k == ord('q'):
+                #    break
+                #if k == 27:
+                #    return
                 Fs.append( F )
                 Ws.append( n_in )
                 if len(Fs) > 0 and len(Fs) % 10 == 0:
@@ -149,6 +150,9 @@ def main():
     #    0, 0, 1]).reshape(3,3)
     #solver = IntrinsicSolverRANSAC(w,h,method='esv')
     #K1 = solver(K0, Fs, Ws)
+
+    #print 'best?'
+    #print solver.solver_.best_
 
     #if mcheck(K1):
     #    K0 = K1

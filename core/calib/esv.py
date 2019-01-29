@@ -257,11 +257,15 @@ class ESVSolver(object):
             e1 = self.cost1(x)
             J1 = self.jac1(x)
             cov0 = M.jac_to_cov(J0, e0)
+            std0 = np.sqrt(np.diag(cov0))
             cov1 = M.jac_to_cov(J1, e1)
+            std1 = np.sqrt(np.diag(cov1))
+
+            print 'evaluation'
             print cov0
-            print 'fx,fy,cx,cy std [0]', np.sqrt(np.diag(cov0))
+            print 'fx,fy,cx,cy std [0]', std0
             print cov1
-            print 'fx,fy,cx,cy std [1]', np.sqrt(np.diag(cov1))
+            print 'fx,fy,cx,cy std [1]', std1
 
         return self.K_
 

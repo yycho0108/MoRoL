@@ -219,9 +219,10 @@ def F2E(F, K=None, Ki=None):
     return np.linalg.multi_dot([
         K.T, F, K])
 
-def jac_to_cov(J, e=None):
+def jac_to_cov(J, e=None, n_params=4):
     """ from scipy/optimize/minpack.py#L739 """
 
+    # naive version
     #JT = J.swapaxes(-1,-2)
     #JTJ = np.einsum('...ab,...bc->...ac', JT, J)
     #cov = np.linalg.pinv(JTJ)
@@ -233,6 +234,7 @@ def jac_to_cov(J, e=None):
 
     cov = np.dot(VT.T / s**2, VT)
     if e is not None:
-        rhs = np.square(e).sum() / (len(e) - 4.0)
+        # WARNING : # of params assumed and hardcoded to be 4
+        rhs = np.square(e).sum() / float(len(e) - n_params)
         cov = cov * rhs
     return cov

@@ -52,7 +52,7 @@ class IntrinsicSolverRANSAC(object):
                     thresh=1e-5, # don't really know what the right thresh is
                     prob=0.999
                     )
-            self.solver_ = ESVSolver(w,h,verbose=False)
+            self.solver_ = ESVSolver(w,h,verbose=True)
 
         # data
         self.cache_ = {}
