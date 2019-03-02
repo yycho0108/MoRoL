@@ -30,16 +30,18 @@ class TrackTest(object):
             scoreType=cv2.ORB_HARRIS_SCORE,
             )
         self.orb_ = orb
-        self.des_ = cv2.xfeatures2d.BoostDesc_create(
-                desc = cv2.xfeatures2d.Boost
-                )
+        self.des_ = orb
+        #self.des_ = cv2.xfeatures2d.BoostDesc_create(
+        #        desc = cv2.xfeatures2d.Boost
+        #        )
         self.track_ = Tracker()
         self.match_ = Matcher(des=orb)
         self.kcf_   = cv2.TrackerKCF_create()
 
         cv2.namedWindow('win')
         cv2.setMouseCallback('win', self.mouse_cb)
-        self.cam_ = cv2.VideoCapture(0)
+        #self.cam_ = cv2.VideoCapture(0)
+        self.cam_ = cv2.VideoCapture('/home/jamiecho/Downloads/scan_20190212-233625.h264')
         self.cam_.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.cam_.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.quit_ = False
@@ -251,7 +253,7 @@ class TrackTest(object):
             cv2.imshow('viz', viz)
 
 
-            k = cv2.waitKey(1)
+            k = cv2.waitKey(0)
             self.key_cb( k )
 
 

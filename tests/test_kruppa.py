@@ -36,9 +36,10 @@ def main():
     feat = cv2.ORB_create(nfeatures=1024)
     matcher = Matcher(des=feat)
 
-    cam = cv2.VideoCapture(0)
-    cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    #cam = cv2.VideoCapture(0)
+    cam = cv2.VideoCapture('/home/jamiecho/Downloads/scan_20190212-233625.h264')
+    #cam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    #cam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     db = []
 
@@ -81,7 +82,7 @@ def main():
                 print('w', w)
                 print np.linalg.matrix_rank(F)
                 if w > 0.4:
-                    c = cov_F(F, pt_a[msk], pt_b[msk])
+                    #c = cov_F(F, pt_a[msk], pt_b[msk])
                     Fs.append( F )
         except Exception as e:
             print 'exception', e

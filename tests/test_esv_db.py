@@ -4,6 +4,7 @@ from core.calib.intrinsic_rsc import IntrinsicSolverRANSAC
 
 from opt.dist import DistSolver
 from core.match import Matcher
+from core.track import Tracker
 from utils import cv_wrap as W
 from utils import vmath as M
 import viz as V
@@ -40,11 +41,14 @@ def main():
 
     matcher = Matcher(des=des)
     match_cfg = Matcher.PRESET_HARD.copy()
+    tracker = Tracker()
     match_cfg['maxd'] = 64.0
 
     imgs = np.load('/tmp/db_imgs.npy')
-    #kpts = np.load('/tmp/db_kpts.npy')
-    #dess = np.load('/tmp/db_dess.npy')
+    #kpts = None
+    #dess = None
+    kpts = np.load('/tmp/db_kpts.npy')
+    dess = np.load('/tmp/db_dess.npy')
 
     #src = np.setxor1d(range(15), [8, 10])
     src = range(15)
@@ -52,8 +56,6 @@ def main():
     #imgs = [e for e in imgs if e is not None]
     #imgs = [cv2.imread('/home/jamiecho/Downloads/images/%03d.tif' % i) for i in [2,3,4,5,6,9]]
 
-    kpts = None
-    dess = None
     if kpts is None:
         print 'building kpt/des cache ...'
         kpts = []
@@ -68,7 +70,8 @@ def main():
     Ws = []
     for i in range(0, len(imgs)):
         print '{}/{}'.format(i, len(imgs))
-        for j in range(i-8, i+8):
+        for j in range(i+1, i+4):
+        #for j in range(i-8, i+8):
         #for j in range(i+1, len(imgs)):
             if i==j: continue
             if j<0 or j>=len(imgs): continue
@@ -84,15 +87,19 @@ def main():
 
             h, w = img0.shape[:2]
 
-            i_m_h0, i_m_h1 = matcher(des0, des1,
-                    **match_cfg
-                    )
-
-            if len(i_m_h0) < 32:
+            kpt0_1, idx_t= tracker(img0, img1, kpt0)
+            pt_a = kpt0[idx_t]
+            pt_b = kpt0_1[idx_t]
+            if len(pt_a) <= 16:
                 continue
 
-            pt_a = kpt0[i_m_h0]
-            pt_b = kpt1[i_m_h1]
+            #i_m_h0, i_m_h1 = matcher(des0, des1,
+            #        **match_cfg
+            #        )
+            #if len(i_m_h0) < 32:
+            #    continue
+            #pt_a = kpt0[i_m_h0]
+            #pt_b = kpt1[i_m_h1]
 
             F, msk = W.F(pt_a, pt_b,
                     method=cv2.FM_RANSAC,
@@ -106,8 +113,8 @@ def main():
 
             r_err = np.einsum('...a,ab,...b', M.to_h(pt_b), F, M.to_h(pt_a))
             r_err = np.sqrt(np.square(r_err).mean())
-            #if n_in > 64 and r_in > 0.8 and r_err < 1.0:
-            if True:
+            if n_in > 64 and r_in > 0.8 and r_err < 1.0:
+            #if True:
                 #mim = V.draw_matches(img0, img1, pt_a, pt_b,
                 #        msk=msk
                 #        )
